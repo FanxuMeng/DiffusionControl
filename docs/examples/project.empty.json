@@ -1,0 +1,90 @@
+{
+  "schema_version": "0.2.0-draft",
+  "project_id": "project_demo_empty",
+  "name": "empty_scene",
+  "directory": {
+    "root": "projects",
+    "relative_path": "empty_scene"
+  },
+  "created_at": "2026-09-05T13:00:00Z",
+  "updated_at": "2026-09-06T00:00:00Z",
+  "revision": 1,
+  "reference": {
+    "image": null,
+    "width": null,
+    "height": null,
+    "global_prompt": "",
+    "source": null
+  },
+  "coordinates": {
+    "frame_id": "reference_camera_opencv",
+    "handedness": "right",
+    "axes": {
+      "x": "right",
+      "y": "down",
+      "z": "forward"
+    },
+    "world_up": [
+      0,
+      -1,
+      0
+    ],
+    "length_unit": "scene_unit",
+    "scale_type": "relative",
+    "meters_per_scene_unit": null,
+    "vector_convention": "column",
+    "quaternion_order": "xyzw"
+  },
+  "reference_camera": null,
+  "scene3d": {
+    "status": "missing",
+    "revision": 0,
+    "point_cloud": null,
+    "metadata": null,
+    "depth": null,
+    "background_indices": null
+  },
+  "objects": [],
+  "timeline": null,
+  "scene4d": {
+    "status": "missing",
+    "manifest": null,
+    "source_revisions": {}
+  },
+  "camera_control": {
+    "trajectory": null,
+    "preview": null,
+    "history": [],
+    "start_policy": "reference_camera_for_symphomotion",
+    "clip": null,
+    "intrinsics": null
+  },
+  "recording_preferences": {
+    "version": 2,
+    "speed_mode": "fixed",
+    "speed_component": "total_translation",
+    "move_speed": 0.35,
+    "translation_basis": "control_camera_local",
+    "vertical_basis": "control_camera_local",
+    "release_behavior": "stop",
+    "normalize_diagonal_input": true,
+    "mouse_buttons_change_speed": false,
+    "object_camera_binding": "object_front",
+    "object_forward_axis": "+X",
+    "object_up_axis": "+Z",
+    "roll_degrees_per_second": 45,
+    "look_degrees_per_pixel": 0.12,
+    "countdown_seconds": 3,
+    "capture_hz": 60,
+    "proposal_fields": [
+      "move_speed",
+      "roll_degrees_per_second",
+      "look_degrees_per_pixel",
+      "capture_hz"
+    ]
+  },
+  "export_profiles": [],
+  "provenance": {
+    "example_only": true
+  }
+}

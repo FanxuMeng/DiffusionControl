@@ -1,0 +1,82 @@
+{
+  "schema_version": "0.2.0-draft",
+  "scene4d_id": "scene4d_demo_001",
+  "revision": 1,
+  "representation": "static_points_plus_rigid_trajectories",
+  "coordinate_frame": "reference_camera_opencv",
+  "length_unit": "scene_unit",
+  "timeline": {
+    "time_unit": "seconds",
+    "fps": 16,
+    "frame_count": 81,
+    "duration_seconds": 5.0,
+    "short_trajectory_policy": "hold_last_pose",
+    "long_trajectory_policy": "require_user_choice",
+    "track_layout": "parallel_one_row_per_target",
+    "before_clip": "hold_first_pose",
+    "after_clip": "hold_last_pose",
+    "clip_time_mapping": "linear"
+  },
+  "base_scene": {
+    "root": "projects",
+    "relative_path": "demo_scene/geometry/scene.ply"
+  },
+  "point_metadata": {
+    "root": "projects",
+    "relative_path": "demo_scene/geometry/scene.meta.npz"
+  },
+  "background_indices": {
+    "root": "projects",
+    "relative_path": "demo_scene/geometry/background.indices.npz"
+  },
+  "objects": [
+    {
+      "object_id": "obj_001",
+      "mode": "trajectory",
+      "point_indices": {
+        "root": "projects",
+        "relative_path": "demo_scene/objects/obj_001/points.indices.npz"
+      },
+      "initial_pose": {
+        "position_world": [
+          0,
+          0,
+          3
+        ],
+        "quaternion_xyzw": [
+          0.7071067811865476,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      },
+      "trajectory": {
+        "root": "projects",
+        "relative_path": "demo_scene/trajectories/objects/obj_001/小车_objtrj.json"
+      },
+      "clip": {
+        "clip_id": "clip_obj_001",
+        "revision": 1,
+        "trajectory_id": "trajectory_obj_001",
+        "trajectory_revision": 1,
+        "start_time_seconds": 1.0,
+        "duration_seconds": 2.5,
+        "time_mapping": {
+          "mode": "linear"
+        },
+        "before_start": "hold_first_pose",
+        "after_end": "hold_last_pose"
+      }
+    }
+  ],
+  "source_revisions": {
+    "scene3d": 1,
+    "obj_001_geometry": 1,
+    "obj_001_trajectory": 1,
+    "obj_001_clip": 1
+  },
+  "derived_cache": null,
+  "provenance": {
+    "example_only": true
+  }
+}

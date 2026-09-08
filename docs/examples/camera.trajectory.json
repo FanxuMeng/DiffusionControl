@@ -1,0 +1,153 @@
+{
+  "schema_version": "0.2.0-draft",
+  "revision": 1,
+  "coordinate_frame": "reference_camera_opencv",
+  "length_unit": "scene_unit",
+  "time_unit": "seconds",
+  "duration_seconds": 5.0,
+  "rotation_representation": "quaternion",
+  "quaternion_order": "xyzw",
+  "interpolation": {
+    "position": "linear",
+    "rotation": "slerp"
+  },
+  "source": {
+    "kind": "illustrative_example",
+    "capture_hz": 60,
+    "control_preferences": {
+      "version": 2,
+      "speed_mode": "fixed",
+      "speed_component": "total_translation",
+      "move_speed": 0.35,
+      "translation_basis": "control_camera_local",
+      "vertical_basis": "control_camera_local",
+      "release_behavior": "stop",
+      "normalize_diagonal_input": true,
+      "mouse_buttons_change_speed": false,
+      "object_camera_binding": "object_front",
+      "object_forward_axis": "+X",
+      "object_up_axis": "+Z",
+      "roll_degrees_per_second": 45,
+      "look_degrees_per_pixel": 0.12,
+      "countdown_seconds": 3,
+      "capture_hz": 60,
+      "proposal_fields": [
+        "move_speed",
+        "roll_degrees_per_second",
+        "look_degrees_per_pixel",
+        "capture_hz"
+      ]
+    }
+  },
+  "samples": [
+    {
+      "t_seconds": 0.0,
+      "position_world": [
+        0,
+        0,
+        0
+      ],
+      "quaternion_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "t_seconds": 2.0,
+      "position_world": [
+        0,
+        0,
+        0.1
+      ],
+      "quaternion_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "t_seconds": 5.0,
+      "position_world": [
+        0,
+        0,
+        0.4
+      ],
+      "quaternion_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ]
+    }
+  ],
+  "trajectory_id": "trajectory_camera_001",
+  "kind": "camera",
+  "target_id": "camera",
+  "camera_intrinsics": {
+    "intrinsics_id": "lens_camera_001",
+    "revision": 1,
+    "mode": "fixed",
+    "time_domain": "trajectory_local_seconds",
+    "calibration": {
+      "calibration_id": "calibration_reference_001",
+      "revision": 1,
+      "model": "pinhole",
+      "image_width": 832,
+      "image_height": 480,
+      "pixel_centers": "integer_coordinates",
+      "intrinsic": [
+        [
+          700,
+          0,
+          415.5
+        ],
+        [
+          0,
+          700,
+          239.5
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "fov": {
+        "horizontal_degrees": 61.44482190457363,
+        "vertical_degrees": 37.84928883210247,
+        "derived_from": "intrinsic_and_image_bounds"
+      },
+      "distortion": {
+        "model": "none",
+        "coefficient_order": [
+          "k1",
+          "k2",
+          "p1",
+          "p2",
+          "k3"
+        ],
+        "coefficients": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "state": "assumed"
+      },
+      "source": "illustrative_example"
+    }
+  },
+  "binding": {
+    "project_id": "project_demo_scene",
+    "reference_revision": 1,
+    "scene3d_revision": 1,
+    "scene4d_revision": 1,
+    "start_policy": "reference_camera_for_symphomotion",
+    "camera_intrinsics_id": "lens_camera_001",
+    "camera_intrinsics_revision": 1
+  }
+}

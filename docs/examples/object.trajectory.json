@@ -1,0 +1,108 @@
+{
+  "schema_version": "0.2.0-draft",
+  "revision": 1,
+  "coordinate_frame": "reference_camera_opencv",
+  "length_unit": "scene_unit",
+  "time_unit": "seconds",
+  "duration_seconds": 5.0,
+  "rotation_representation": "quaternion",
+  "quaternion_order": "xyzw",
+  "interpolation": {
+    "position": "linear",
+    "rotation": "slerp"
+  },
+  "source": {
+    "kind": "illustrative_example",
+    "capture_hz": 60,
+    "control_preferences": {
+      "version": 2,
+      "speed_mode": "fixed",
+      "speed_component": "total_translation",
+      "move_speed": 0.35,
+      "translation_basis": "control_camera_local",
+      "vertical_basis": "control_camera_local",
+      "release_behavior": "stop",
+      "normalize_diagonal_input": true,
+      "mouse_buttons_change_speed": false,
+      "object_camera_binding": "object_front",
+      "object_forward_axis": "+X",
+      "object_up_axis": "+Z",
+      "roll_degrees_per_second": 45,
+      "look_degrees_per_pixel": 0.12,
+      "countdown_seconds": 3,
+      "capture_hz": 60,
+      "proposal_fields": [
+        "move_speed",
+        "roll_degrees_per_second",
+        "look_degrees_per_pixel",
+        "capture_hz"
+      ]
+    }
+  },
+  "samples": [
+    {
+      "t_seconds": 0.0,
+      "position_world": [
+        0,
+        0,
+        3
+      ],
+      "quaternion_xyzw": [
+        0.7071067811865476,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "t_seconds": 2.0,
+      "position_world": [
+        0.2,
+        0,
+        3
+      ],
+      "quaternion_xyzw": [
+        0.7071067811865476,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "t_seconds": 5.0,
+      "position_world": [
+        1.0,
+        0,
+        3
+      ],
+      "quaternion_xyzw": [
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ]
+    }
+  ],
+  "trajectory_id": "trajectory_obj_001",
+  "kind": "object",
+  "target_id": "obj_001",
+  "binding": {
+    "project_id": "project_demo_scene",
+    "scene3d_revision": 1,
+    "object_geometry_revision": 1,
+    "bbox_revision": 1,
+    "initial_pose": {
+      "position_world": [
+        0,
+        0,
+        3
+      ],
+      "quaternion_xyzw": [
+        0.7071067811865476,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    }
+  }
+}

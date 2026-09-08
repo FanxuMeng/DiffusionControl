@@ -1,0 +1,526 @@
+{
+  "schema_version": "0.2.0-draft",
+  "project_id": "project_demo_scene",
+  "name": "demo_scene",
+  "directory": {
+    "root": "projects",
+    "relative_path": "demo_scene"
+  },
+  "created_at": "2026-09-05T13:00:00Z",
+  "updated_at": "2026-09-06T00:00:00Z",
+  "revision": 1,
+  "reference": {
+    "image": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/reference/first_frame.png"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "width": 832,
+    "height": 480,
+    "global_prompt": "桌面上的小车向前行驶，相机缓慢推进。",
+    "source": {
+      "kind": "upload",
+      "original_filename": "reference.png"
+    }
+  },
+  "coordinates": {
+    "frame_id": "reference_camera_opencv",
+    "handedness": "right",
+    "axes": {
+      "x": "right",
+      "y": "down",
+      "z": "forward"
+    },
+    "world_up": [
+      0,
+      -1,
+      0
+    ],
+    "length_unit": "scene_unit",
+    "scale_type": "relative",
+    "meters_per_scene_unit": null,
+    "vector_convention": "column",
+    "quaternion_order": "xyzw"
+  },
+  "reference_camera": {
+    "calibration_id": "calibration_reference_001",
+    "revision": 1,
+    "model": "pinhole",
+    "image_width": 832,
+    "image_height": 480,
+    "pixel_centers": "integer_coordinates",
+    "intrinsic": [
+      [
+        700,
+        0,
+        415.5
+      ],
+      [
+        0,
+        700,
+        239.5
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "fov": {
+      "horizontal_degrees": 61.44482190457363,
+      "vertical_degrees": 37.84928883210247,
+      "derived_from": "intrinsic_and_image_bounds"
+    },
+    "distortion": {
+      "model": "none",
+      "coefficient_order": [
+        "k1",
+        "k2",
+        "p1",
+        "p2",
+        "k3"
+      ],
+      "coefficients": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "state": "assumed"
+    },
+    "source": "illustrative_example",
+    "c2w": [
+      [
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "scene3d": {
+    "status": "ready",
+    "revision": 1,
+    "point_cloud": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/geometry/scene.ply"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "metadata": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/geometry/scene.meta.npz"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "depth": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/geometry/depth.npz"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "background_indices": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/geometry/background.indices.npz"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "source_reference_revision": 1,
+    "point_count": 100000,
+    "pixel_mapping": "source_uv_and_point_ids",
+    "depth_semantics": "camera_z",
+    "reconstruction": {
+      "backend": "to_be_selected",
+      "source_to_canonical": [
+        [
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "scale_factor": 1.0
+    }
+  },
+  "objects": [
+    {
+      "object_id": "obj_001",
+      "name": "小车",
+      "color": "#FF7A45",
+      "prompt": "一辆沿路线行驶并转向的小车",
+      "segmentation": {
+        "method": "SAM",
+        "model_id": "configure_on_server",
+        "confirmed": true,
+        "mask": {
+          "path": {
+            "root": "projects",
+            "relative_path": "demo_scene/objects/obj_001/小车.png"
+          },
+          "status": "ready",
+          "revision": 1,
+          "sha256": null
+        },
+        "preview": {
+          "path": {
+            "root": "projects",
+            "relative_path": "demo_scene/objects/obj_001/小车_mask_preview.png"
+          },
+          "status": "ready",
+          "revision": 1,
+          "sha256": null
+        },
+        "mask_encoding": "uint8_binary_0_255",
+        "image_width": 832,
+        "image_height": 480,
+        "source_reference_revision": 1,
+        "revision": 1,
+        "prompts": {
+          "positive_points": [
+            [
+              416,
+              260
+            ]
+          ],
+          "negative_points": [],
+          "boxes": []
+        }
+      },
+      "geometry": {
+        "status": "ready",
+        "point_indices": {
+          "path": {
+            "root": "projects",
+            "relative_path": "demo_scene/objects/obj_001/points.indices.npz"
+          },
+          "status": "ready",
+          "revision": 1,
+          "sha256": null
+        },
+        "point_count": 2000,
+        "source_scene3d_revision": 1,
+        "revision": 1
+      },
+      "bbox": {
+        "type": "OBB",
+        "center_world": [
+          0,
+          0,
+          3
+        ],
+        "half_extents": [
+          0.5,
+          0.3,
+          0.4
+        ],
+        "quaternion_bbox_to_world_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "revision": 1
+      },
+      "front": {
+        "confirmed": true,
+        "face_id": "positive_x",
+        "normal_world": [
+          1,
+          0,
+          0
+        ],
+        "point_world": [
+          0.5,
+          0,
+          3
+        ],
+        "plane_world": [
+          1,
+          0,
+          0,
+          -0.5
+        ],
+        "up_hint_world": [
+          0,
+          -1,
+          0
+        ],
+        "resolved_up_world": [
+          0,
+          -1,
+          0
+        ],
+        "orientation_rule": "front_x_projected_up_z",
+        "source_bbox_revision": 1
+      },
+      "initial_pose": {
+        "position_world": [
+          0,
+          0,
+          3
+        ],
+        "quaternion_xyzw": [
+          0.7071067811865476,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      },
+      "motion": {
+        "mode": "trajectory",
+        "trajectory": {
+          "path": {
+            "root": "projects",
+            "relative_path": "demo_scene/trajectories/objects/obj_001/小车_objtrj.json"
+          },
+          "status": "ready",
+          "revision": 1,
+          "sha256": null
+        },
+        "preview": {
+          "path": {
+            "root": "projects",
+            "relative_path": "demo_scene/trajectories/objects/obj_001/小车_objtrj.png"
+          },
+          "status": "ready",
+          "revision": 1,
+          "sha256": null
+        },
+        "history": []
+      },
+      "clip": {
+        "clip_id": "clip_obj_001",
+        "revision": 1,
+        "trajectory_id": "trajectory_obj_001",
+        "trajectory_revision": 1,
+        "start_time_seconds": 1.0,
+        "duration_seconds": 2.5,
+        "time_mapping": {
+          "mode": "linear"
+        },
+        "before_start": "hold_first_pose",
+        "after_end": "hold_last_pose"
+      }
+    }
+  ],
+  "timeline": {
+    "time_unit": "seconds",
+    "fps": 16,
+    "frame_count": 81,
+    "duration_seconds": 5.0,
+    "short_trajectory_policy": "hold_last_pose",
+    "long_trajectory_policy": "require_user_choice",
+    "track_layout": "parallel_one_row_per_target",
+    "before_clip": "hold_first_pose",
+    "after_clip": "hold_last_pose",
+    "clip_time_mapping": "linear"
+  },
+  "scene4d": {
+    "status": "ready",
+    "manifest": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/scene4d/scene4d.json"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "source_revisions": {
+      "scene3d": 1,
+      "obj_001_geometry": 1,
+      "obj_001_trajectory": 1,
+      "obj_001_clip": 1
+    }
+  },
+  "camera_control": {
+    "trajectory": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/trajectories/camera/demo_scene_camtrj.json"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "preview": {
+      "path": {
+        "root": "projects",
+        "relative_path": "demo_scene/trajectories/camera/demo_scene_camtrj.png"
+      },
+      "status": "ready",
+      "revision": 1,
+      "sha256": null
+    },
+    "history": [],
+    "start_policy": "reference_camera_for_symphomotion",
+    "source_scene4d_revision": 1,
+    "intrinsics": {
+      "intrinsics_id": "lens_camera_001",
+      "revision": 1,
+      "mode": "fixed",
+      "time_domain": "trajectory_local_seconds",
+      "calibration": {
+        "calibration_id": "calibration_reference_001",
+        "revision": 1,
+        "model": "pinhole",
+        "image_width": 832,
+        "image_height": 480,
+        "pixel_centers": "integer_coordinates",
+        "intrinsic": [
+          [
+            700,
+            0,
+            415.5
+          ],
+          [
+            0,
+            700,
+            239.5
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "fov": {
+          "horizontal_degrees": 61.44482190457363,
+          "vertical_degrees": 37.84928883210247,
+          "derived_from": "intrinsic_and_image_bounds"
+        },
+        "distortion": {
+          "model": "none",
+          "coefficient_order": [
+            "k1",
+            "k2",
+            "p1",
+            "p2",
+            "k3"
+          ],
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "state": "assumed"
+        },
+        "source": "illustrative_example"
+      }
+    },
+    "clip": {
+      "clip_id": "clip_camera_001",
+      "revision": 1,
+      "trajectory_id": "trajectory_camera_001",
+      "trajectory_revision": 1,
+      "start_time_seconds": 0.0,
+      "duration_seconds": 5.0,
+      "time_mapping": {
+        "mode": "linear"
+      },
+      "before_start": "hold_first_pose",
+      "after_end": "hold_last_pose"
+    }
+  },
+  "recording_preferences": {
+    "version": 2,
+    "speed_mode": "fixed",
+    "speed_component": "total_translation",
+    "move_speed": 0.35,
+    "translation_basis": "control_camera_local",
+    "vertical_basis": "control_camera_local",
+    "release_behavior": "stop",
+    "normalize_diagonal_input": true,
+    "mouse_buttons_change_speed": false,
+    "object_camera_binding": "object_front",
+    "object_forward_axis": "+X",
+    "object_up_axis": "+Z",
+    "roll_degrees_per_second": 45,
+    "look_degrees_per_pixel": 0.12,
+    "countdown_seconds": 3,
+    "capture_hz": 60,
+    "proposal_fields": [
+      "move_speed",
+      "roll_degrees_per_second",
+      "look_degrees_per_pixel",
+      "capture_hz"
+    ]
+  },
+  "export_profiles": [
+    {
+      "target": "symphomotion",
+      "profile_id": "symphomotion_reference_draft",
+      "adapter_version": null,
+      "upstream_commit": "bf9af6666c0f8cbb594e64f165be79b44c962763",
+      "frame_count": 81,
+      "fps": 16,
+      "width": 832,
+      "height": 480,
+      "points_per_entity": 500,
+      "max_entities": 2,
+      "entity_mapping": {
+        "obj_001": "0"
+      },
+      "compatibility_status": "source_review_only",
+      "last_export": null
+    }
+  ],
+  "provenance": {
+    "example_only": true
+  }
+}
