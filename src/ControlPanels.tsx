@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import type { Face, MotionClip, Project, SceneObject, Trajectory } from './types';
 import { OBJECT_FACES } from './objectAxes';
+import GenerationPanel from './GenerationPanel';
+import type { GenerationState } from './generation/types';
 import './panels.css';
 
 export interface ControlPanelsProps {
@@ -30,6 +32,8 @@ export interface ControlPanelsProps {
   onImageGenerate: () => void;
   onLensEdit?: () => void;
   onPreview?: (trajectory: Trajectory) => void;
+  onGenerationChange: (update: (state: GenerationState) => GenerationState) => void;
+  onNotify: (message: string, kind?: 'info' | 'success' | 'error') => void;
 }
 
 function ObjectThumbnail({ object }: { object: SceneObject }) {
@@ -86,7 +90,7 @@ export function ControlPanels(props: ControlPanelsProps) {
   };
 
   return (
-    <aside className="dcp-panels" aria-label="项目与运动控制">
+    <aside className="dcp-panels" aria-label="项目、运动与生成控制">
       <section className="dcp-panel dcp-projects-panel">
         <div className="dcp-panel-header">
           <button className="dcp-section-title" onClick={() => toggle('projects')} aria-expanded={!collapsed.projects}>
@@ -195,6 +199,7 @@ export function ControlPanels(props: ControlPanelsProps) {
           <div className="dcp-camera-note"><Crosshair size={12} /><span>首帧位姿对齐 <span>· SymphoMotion</span></span></div>
         </div>}
       </section>
+      <GenerationPanel key={project.id} projectId={project.id} projectName={project.name} state={project.generation} locked={locked} onChange={props.onGenerationChange} onNotify={props.onNotify} />
     </aside>
   );
 }

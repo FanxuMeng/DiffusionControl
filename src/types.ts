@@ -1,3 +1,5 @@
+import type { GenerationState } from './generation/types';
+
 export type Vec3 = [number, number, number];
 export type Vec2 = [number, number];
 export type Mat3 = [[number, number, number], [number, number, number], [number, number, number]];
@@ -40,6 +42,7 @@ export interface SceneObject {
   maskPreview?: string;
 }
 export interface Project {
+  generation: GenerationState;
   id: string; name: string; description: string; parentPath: string; reference: string | null;
   demoScene: 'studio' | 'gallery' | null; demoSceneRevision: number | null; objects: SceneObject[]; geometryReady: boolean;
   fourD: 'missing' | 'ready' | 'stale'; camera: Trajectory | null; cameraHistory: Trajectory[];

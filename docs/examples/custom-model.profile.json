@@ -1,0 +1,22 @@
+{
+  "id": "custom-diffusion-example",
+  "version": 1,
+  "name": "自定义扩散模型 · 格式示例",
+  "model": "CustomDiffusion",
+  "description": "仅用于演示可导入的参数与命令模板，不对应已经安装的模型。请将入口和参数改成你的真实推理脚本。",
+  "inputRequirements": [
+    "CE 需注册相同 ID 和版本，配置工作目录、环境及真实脚本。",
+    "输入图像路径相对于 CE 工作目录；此示例不会自动上传当前首帧。"
+  ],
+  "commandPrefix": ["python3", "ce_custom_infer.py"],
+  "parameters": [
+    { "key": "image", "flag": "--image", "label": "参考图路径", "type": "path", "defaultValue": "inputs/first frame.png", "required": true },
+    { "key": "prompt", "flag": "--prompt", "label": "生成提示词", "type": "string", "defaultValue": "A person walks through the scene." },
+    { "key": "steps", "flag": "--steps", "label": "推理步数", "type": "integer", "defaultValue": "30", "min": 1, "max": 200 },
+    { "key": "seed", "flag": "--seed", "label": "随机种子", "type": "integer", "defaultValue": "42" },
+    { "key": "guidance", "flag": "--guidance", "label": "Guidance", "type": "number", "defaultValue": "5.5", "min": 0 },
+    { "key": "mode", "flag": "--mode", "label": "生成模式", "type": "enum", "defaultValue": "preview", "choices": ["preview", "quality"] },
+    { "key": "size", "flag": "--size", "label": "输出尺寸 W H", "type": "list", "defaultValue": "[\"832\",\"480\"]", "nargs": 2 },
+    { "key": "offload", "flag": "--offload", "falseFlag": "--no-offload", "label": "CPU offload", "type": "boolean", "defaultValue": "true" }
+  ]
+}

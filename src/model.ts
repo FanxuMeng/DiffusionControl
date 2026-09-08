@@ -1,4 +1,5 @@
 import { DEFAULT_MOVE_SPEED } from './navigationSpeed';
+import { createGenerationState, validateGenerationState } from './generation/domain';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { CameraCalibration, CameraIntrinsicsTrack, ControlSettings, Face, MigrationResult, MotionClip, Pose, Project, Quat, Sample, SceneObject, Trajectory, Vec3 } from './types';
 import { createCameraIntrinsics, createDefaultCalibration, deriveFov, exportCameraIntrinsics, validateCameraCalibration, validateCameraIntrinsics } from './cameraMath';
@@ -76,6 +77,7 @@ export function createDemoProjects(): Project[] {
       reference: null, demoScene: 'studio', demoSceneRevision: DEMO_SCENE_REVISION, objects: [chair, plant, table, demoHumanoid('studio')], geometryReady: true,
       fourD: 'missing', camera: null, cameraHistory: [], duration: 5, fps: 16, updatedAt: now(),
       referenceCamera: studioCalibration, cameraIntrinsics: createCameraIntrinsics(studioCalibration), cameraClip: null,
+      generation: createGenerationState(),
     },
     {
       id: 'gallery_02', name: '形态实验室', description: 'FORM LABORATORY', parentPath: '/projects',
@@ -83,6 +85,7 @@ export function createDemoProjects(): Project[] {
       objects: [demoObject('sculpture', '球体雕塑', 'sphere', [0, 0.2, 5], [0.8, 0.8, 0.8], '#a3c6ff'), demoHumanoid('gallery')],
       geometryReady: true, fourD: 'missing', camera: null, cameraHistory: [], duration: 5, fps: 16, updatedAt: now(),
       referenceCamera: galleryCalibration, cameraIntrinsics: createCameraIntrinsics(galleryCalibration), cameraClip: null,
+      generation: createGenerationState(),
     },
   ];
 }
@@ -95,6 +98,7 @@ export function createEmptyProject(name: string, parentPath: string): Project {
     reference: null, demoScene: null, demoSceneRevision: null, objects: [], geometryReady: false, fourD: 'missing',
     camera: null, cameraHistory: [], duration: 5, fps: 16, updatedAt: now(),
     referenceCamera: null, cameraIntrinsics: null, cameraClip: null,
+    generation: createGenerationState(),
   };
 }
 
@@ -456,6 +460,7 @@ export function validatePrototypeProject(raw: unknown): Project {
     referenceCamera, cameraIntrinsics, cameraClip,
     cameraHistory: projectArray(data.cameraHistory, 'cameraHistory', 500).map(entry => projectTrajectory(entry, 'camera')),
     duration, fps, updatedAt: projectDate(data.updatedAt, 'updatedAt'),
+    generation: data.generation === undefined ? createGenerationState() : validateGenerationState(data.generation),
   };
 }
 
