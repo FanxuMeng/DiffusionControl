@@ -1,14 +1,16 @@
 # Project 文件构成与 JSON README
 
+2026-09-09：v0.6 已为命名运行配置增加 execution 草稿，保存 ENVNAME、脚本文件名和全文；新推理请求采用 API v2，冻结内层推理 argv 与外层 sbatch 执行快照。历史 API v1 请求保持原样，只能查询／导出，见 [Slurm 数据扩展](slurm-execution.md#api-v2-与兼容性)。
+
 2026-09-08：v0.5 已实现 generation v1 扩展，保存命名配置、模型定义、命令草稿及提交记录；旧项目缺少此字段时初始化默认配置。原型备份与正式 JSON 的基础导入均保留该扩展，格式见 [生成数据](generation-panel.md#项目数据扩展)。既有 export_profiles 继续仅表示条件包导出。
 
-正式项目格式版本保持 `0.2.0-draft`，原型备份封装保持 version 2；应用版本为 v0.5。以下是本系统的持久化契约，不是 SymphoMotion、ViewCrafter 或 Uni3C 的原生格式。浏览器已实现独立时间片段、固定镜头参数、旧工作区迁移及生成配置；正式服务端资产存储、路径解析和模型条件导出仍需实现，不能将原型备份当作上游推理输入。
+正式项目格式版本保持 `0.2.0-draft`，原型备份封装保持 version 2，generation 扩展保持 version 1；应用版本为 v0.6。旧运行配置缺少 execution 时补默认 Slurm 草稿，不改写历史提交快照。以下是本系统的持久化契约，不是 SymphoMotion、ViewCrafter 或 Uni3C 的原生格式。浏览器已实现独立时间片段、固定镜头参数、旧工作区迁移及生成配置；正式服务端资产存储、路径解析和模型条件导出仍需实现，不能将原型备份当作上游推理输入。
 
 本次更新的已确认约定是：每个物体独占一行并行时间轨道；原始轨迹与时间片段分开；移动片段改变开始时间，拖动边界伸缩完整运动；相机参数由项目和轨迹共同持久化。**D17-A：每条相机轨迹使用固定、可编辑的 K／FOV／畸变；D18-B：物体虚拟相机绑定物体正面；D19-A：整段按比例变速，移动只改开始时间。**
 
 ## 1. 存储位置与环境变量
 
-**已确定的部署约束：** 应用运行在浏览器中，前后端分离，服务端部署在有算力的 CE 集群。项目与模型所用的长期路径由**服务端**解析；浏览器不直接读取服务器绝对路径。浏览器选中的本机文件先上传，不能把 `C:\\...` 或 `/Users/...` 直接作为 CE 可读路径。
+**已确定的部署约束：** 应用运行在浏览器中，前后端分离，服务端部署于 CE 登录节点，通过 Slurm 调度计算节点。项目与模型所用的长期路径由**服务端**解析；浏览器不直接读取服务器绝对路径。浏览器选中的本机文件先上传，不能把 `C:\\...` 或 `/Users/...` 直接作为 CE 可读路径。
 
 建议服务端配置：
 
@@ -19,7 +21,7 @@ DIFFUSIONCONTROL_MODEL_ROOT=/ce/shared/diffusioncontrol/models
 DIFFUSIONCONTROL_CACHE_ROOT=/ce/shared/diffusioncontrol/cache
 ```
 
-上述是示意路径，不声称 CE 集群已有这些目录。实际挂载点、调度器与资源队列待配置。前两项用于持久化文件引用，模型目录和缓存目录由服务配置管理，项目不得保存凭据。
+上述是示意路径，不声称 CE 集群已有这些目录。Slurm 已确定；实际挂载点与服务运行配置仍需落实。前两项用于持久化文件引用，模型目录和缓存目录由服务配置管理，项目不得保存凭据。
 
 项目 JSON 中所有资产路径统一采用 `PathRef`：
 
@@ -103,7 +105,7 @@ assets/                                    # ASSETS_ROOT
 | camera_control | object | 当前相机轨迹、独立 clip、与轨迹一致的 intrinsics 镜头参数快照、历史及起始策略 |
 | recording_preferences | object | 键鼠配置、原始采样率、倒计时配置，带配置版本 |
 | export_profiles | array | 目标模型、适配器／上游版本和导出参数 |
-| generation | object | 可选 v1 扩展：当前模型、命名运行配置、自定义模型 schema、命令草稿及提交快照；旧项目缺字段时补默认配置 |
+| generation | object | 可选 v1 扩展：当前模型、命名运行配置、自定义模型 schema、推理命令、Slurm execution 草稿及提交快照；旧项目缺字段时补默认配置 |
 | provenance | object | 可选，导入来源与迁移记录，不保存秘密信息 |
 
 资产 `AssetRef` 建议结构为 `{path, status, revision, sha256, source_revisions, error}`。不适用的字段可省略；缺失资产 `path:null,status:"missing"`。哈希必须是对实际文件计算的值，示例中的 `null` 不代表已经做了完整性验证。

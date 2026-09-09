@@ -1,8 +1,10 @@
 import type { GenerationCapabilities, GenerationJob, GenerationRequest } from './types';
+import { isSlurmRequest } from './slurm';
 
 const ENDPOINT_KEY = 'diffusioncontrol.ce.apiBaseUrl';
+export const SAME_ORIGIN_API_BASE = '/api';
 const TIMEOUT_MS = 15000;
-/** API v1 reserves these POST statuses for rejection before job creation. */
+/** API v1/v2 reserve these POST statuses for rejection before job creation. */
 export class GenerationRejectedError extends Error {
   readonly status: 400 | 422;
   constructor(status: 400 | 422, message: string) {
@@ -12,8 +14,8 @@ export class GenerationRejectedError extends Error {
   }
 }
 export function readApiEndpoint(): string {
-  try { const value = localStorage.getItem(ENDPOINT_KEY); if (value !== null) return value; } catch { /* Session-only settings remain usable. */ }
-  return import.meta.env.VITE_CE_API_BASE_URL ?? '';
+  try { const value = localStorage.getItem(ENDPOINT_KEY)?.trim(); if (value) return value; } catch { /* Session-only settings remain usable. */ }
+  return import.meta.env.VITE_CE_API_BASE_URL?.trim() || SAME_ORIGIN_API_BASE;
 }
 export function saveApiEndpoint(value: string) { try { localStorage.setItem(ENDPOINT_KEY, value); } catch { /* The current connection still works. */ } }
 export function normalizeApiBase(value: string): string {
@@ -72,14 +74,24 @@ async function jsonRequest(endpoint: string, path: string, options: RequestInit,
 
 export async function fetchGenerationCapabilities(endpoint: string, signal?: AbortSignal): Promise<GenerationCapabilities> {
   const raw = object(await jsonRequest(endpoint, '/inference/capabilities', { method: 'GET' }, signal));
-  if (raw.apiVersion !== 1 || !Array.isArray(raw.profiles) || raw.profiles.length > 200) throw new Error('CE 服务未返回支持的 v1 模型能力清单。');
+  if ((raw.apiVersion !== 1 && raw.apiVersion !== 2) || !Array.isArray(raw.profiles) || raw.profiles.length > 200) throw new Error('CE 服务未返回支持的 v1/v2 模型能力清单。');
   const profiles = raw.profiles.map(value => {
     const profile = object(value), version = profile.version;
     if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error('CE 模型 profile 版本无效。');
     return { id: id(profile.id, 'profile.id'), version };
   });
   if (new Set(profiles.map(profile => `${profile.id}@${profile.version}`)).size !== profiles.length) throw new Error('CE 能力清单包含重复的模型版本。');
-  return { apiVersion: 1, profiles };
+  let executionModes: string[] | undefined;
+  if (raw.executionModes !== undefined) {
+    if (!Array.isArray(raw.executionModes) || raw.executionModes.length > 50) throw new Error('CE 执行模式清单无效。');
+    executionModes = raw.executionModes.map(value => id(value, 'executionMode'));
+    if (new Set(executionModes).size !== executionModes.length) throw new Error('CE 执行模式不能重复。');
+  }
+  return { apiVersion: raw.apiVersion, profiles, ...(executionModes ? { executionModes } : {}) };
+}
+
+export function supportsSlurmExecution(capabilities: GenerationCapabilities | null | undefined): boolean {
+  return capabilities?.apiVersion === 2 && capabilities.executionModes?.includes('slurm_sbatch_v1') === true;
 }
 
 function parseJob(rawValue: unknown, endpoint: string, requestId: string, jobId?: string): GenerationJob {
@@ -100,6 +112,7 @@ function parseJob(rawValue: unknown, endpoint: string, requestId: string, jobId?
 }
 
 export async function submitGenerationJob(endpoint: string, request: GenerationRequest, signal?: AbortSignal): Promise<GenerationJob> {
+  if (!isSlurmRequest(request)) throw new Error('仅允许提交带完整 Slurm 配置的 API v2 请求；历史 v1 请求只可查询或导出。');
   id(request.requestId, 'requestId');
   const raw = await jsonRequest(endpoint, '/inference/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': request.requestId }, body: JSON.stringify(request) }, signal);
   return parseJob(raw, endpoint, request.requestId);

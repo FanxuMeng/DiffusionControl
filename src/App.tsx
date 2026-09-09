@@ -381,7 +381,7 @@ export default function App() {
     <header className="app-header">
       <a className="brand" href="#" onClick={e => e.preventDefault()} aria-label="Diffusion Control"><span className="brand-mark"><Layers3 size={22} /></span><span>diffusion<span className="brand-light">control</span><small>场景与轨迹编辑</small></span></a>
       <div className="header-divider" /><div className="project-breadcrumb"><FolderOpen size={15} /><span>{project.name}</span><ChevronDown size={12} /></div>
-      <span className="prototype-badge">交互原型 <span>v0.5</span></span>
+      <span className="prototype-badge">交互原型 <span>v0.6</span></span>
       <div className="header-actions"><span className="save-status"><span />{saveStatus}</span><button className="theme-toggle text-button" aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'} title={theme === 'dark' ? '当前：深色模式' : '当前：浅色模式'} onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={16}/> : <Moon size={16}/>}<span>{theme === 'dark' ? '浅色模式' : '深色模式'}</span></button><button className="icon-button" onClick={() => setModal('help')} aria-label="操作指南"><CircleHelp size={18} /></button><button className="export-button" onClick={() => setModal('export')} disabled={locked}><ArrowDownToLine size={15} />导出项目</button></div>
     </header>
     <div className="workspace">

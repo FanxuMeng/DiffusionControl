@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#SBATCH --export=NONE
+#SBATCH -J gpu               # Job name
+#SBATCH -o out.gpu           # Standard output
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH -t 7-00:00:00        # 7 days
+#SBATCH -p youlab-gpu
+#SBATCH -G 2
+
+conda init bash ; source ~/.bashrc
+
+ENVNAME="default_env"
+if [[ "$1" == ENVNAME=* ]]; then
+    ENVNAME="${1#ENVNAME=}"
+    shift
+fi
+
+conda activate "$ENVNAME"
+
+exec "$@"

@@ -1,5 +1,7 @@
 import { BUILTIN_MODEL_PROFILES } from './profiles';
-import type { GenerationInspection, GenerationIssue, GenerationJob, GenerationParameter, GenerationParameters, GenerationRequest, GenerationState, GenerationValues, ModelProfile, ProjectGenerationProfile } from './types';
+import { createSlurmExecution, getSlurmExecution, inspectSlurmExecution, validateSlurmExecutionDraft } from './slurm';
+export { createSlurmExecution, getSlurmExecution } from './slurm';
+import type { GenerationInspection, GenerationIssue, GenerationJob, GenerationParameter, GenerationParameters, GenerationRequest, GenerationState, GenerationValues, ModelProfile, ProjectGenerationProfile, SlurmExecutionConfig } from './types';
 
 const forbiddenKeys = new Set(['__proto__', 'prototype', 'constructor']);
 const parameterTypes = new Set(['string', 'path', 'integer', 'number', 'boolean', 'enum', 'list']);
@@ -269,7 +271,7 @@ export function createProjectProfile(state: GenerationState, name: string, copyF
   if (state.projectProfiles.some(profile => profile.modelProfileId === modelId && profile.name === label)) fail('同一模型的运行配置名称不能重复');
   if (state.projectProfiles.length >= 100) fail('最多支持 100 个项目运行配置');
   const values = source ? { ...source.values } : defaults(model!);
-  const profile: ProjectGenerationProfile = { id: id(), name: label, modelProfileId: modelId, modelProfileVersion: source?.modelProfileVersion ?? model!.version, values, commandText: source?.commandText ?? canonicalCommand(model!, values), editSource: source?.editSource ?? 'form' };
+  const profile: ProjectGenerationProfile = { id: id(), name: label, modelProfileId: modelId, modelProfileVersion: source?.modelProfileVersion ?? model!.version, values, commandText: source?.commandText ?? canonicalCommand(model!, values), editSource: source?.editSource ?? 'form', execution: source ? getSlurmExecution(source) : createSlurmExecution() };
   return { ...state, selectedModelId: modelId, activeProfileIds: { ...state.activeProfileIds, [modelId]: profile.id }, projectProfiles: [...state.projectProfiles, profile] };
 }
 export function renameProjectProfile(state: GenerationState, profileId: string, name: string): GenerationState {
@@ -279,6 +281,11 @@ export function renameProjectProfile(state: GenerationState, profileId: string, 
 }
 function replaceProfile(state: GenerationState, next: ProjectGenerationProfile): GenerationState {
   return { ...state, projectProfiles: state.projectProfiles.map(profile => profile.id === next.id ? next : profile) };
+}
+export function updateExecution(state: GenerationState, profileId: string, patch: Partial<Pick<SlurmExecutionConfig, 'envName' | 'scriptName' | 'scriptContent'>>): GenerationState {
+  const profile = requireProfile(state, profileId);
+  const execution = validateSlurmExecutionDraft({ ...getSlurmExecution(profile), ...patch });
+  return replaceProfile(state, { ...profile, execution });
 }
 export function updateField(state: GenerationState, profileId: string, key: string, value: string): GenerationState {
   const profile = requireProfile(state, profileId), model = profileModel(state, profile) ?? fail('当前模型版本不可用，无法修改参数');
@@ -306,8 +313,10 @@ export function importModelProfile(state: GenerationState, raw: unknown): Genera
 }
 export function inspectProjectProfile(state: GenerationState, profileId: string): GenerationInspection {
   const draft = state.projectProfiles.find(profile => profile.id === profileId);
-  const result: GenerationInspection = { draft, issues: [], argv: [], parameters: null, commandParseable: false, canExecute: false };
+  const result: GenerationInspection = { draft, issues: [], argv: [], parameters: null, submissionArgv: [], submissionCommand: '', commandParseable: false, canExecute: false };
   if (!draft) { result.issues.push({ message: '项目运行配置不存在' }); return result; }
+  const execution = getSlurmExecution(draft);
+  result.issues.push(...inspectSlurmExecution(execution));
   const model = profileModel(state, draft);
   if (!model) { result.issues.push({ message: `模型 ${draft.modelProfileId} v${draft.modelProfileVersion} 不可用；已保留草稿` }); return result; }
   result.model = model;
@@ -315,6 +324,8 @@ export function inspectProjectProfile(state: GenerationState, profileId: string)
   try {
     const parsed = parseCommand(model, draft.commandText);
     result.commandParseable = true; result.argv = parsed.argv; result.issues.push(...parsed.issues);
+    result.submissionArgv = ['sbatch', execution.scriptName, `ENVNAME=${execution.envName}`, ...parsed.argv];
+    result.submissionCommand = result.submissionArgv.map(quoteArg).join(' ');
     const inspected = valuesInspection(model, parsed.values);
     for (const issue of inspected.issues) if (!result.issues.some(existing => existing.field === issue.field && existing.message === issue.message)) result.issues.push(issue);
     result.parameters = inspected.parameters;
@@ -328,7 +339,7 @@ export function inspectProjectProfile(state: GenerationState, profileId: string)
 export function buildGenerationRequest(state: GenerationState, profileId: string, project: { id: string; name: string }, requestId: string = id()): GenerationRequest {
   const inspected = inspectProjectProfile(state, profileId);
   if (!inspected.canExecute || !inspected.model || !inspected.draft || !inspected.parameters) fail(inspected.issues.map(issue => issue.message).join('；') || '配置尚不可执行');
-  return clone({ apiVersion: 1, requestId: identifier(requestId, '请求 ID'), createdAt: new Date().toISOString(), projectId: identifier(project.id, '项目 ID'), projectName: text(project.name, '项目名称', false, 200), projectProfileId: profileId, profileId: inspected.model.id, profileVersion: inspected.model.version, parameters: inspected.parameters, argv: inspected.argv, command: inspected.draft.commandText });
+  return clone({ apiVersion: 2, execution: { ...getSlurmExecution(inspected.draft), argv: inspected.submissionArgv, command: inspected.submissionCommand }, requestId: identifier(requestId, '请求 ID'), createdAt: new Date().toISOString(), projectId: identifier(project.id, '项目 ID'), projectName: text(project.name, '项目名称', false, 200), projectProfileId: profileId, profileId: inspected.model.id, profileVersion: inspected.model.version, parameters: inspected.parameters, argv: inspected.argv, command: inspected.draft.commandText });
 }
 
 function absoluteUrl(raw: unknown, label: string, endpoint = false): string {
@@ -345,7 +356,7 @@ function outputUrl(raw: unknown): string {
 }
 function validateRequest(raw: unknown, models: ModelProfile[]): GenerationRequest {
   const source = record(raw, '提交请求');
-  if (source.apiVersion !== 1) fail('不支持的请求版本');
+  if (source.apiVersion !== 1 && source.apiVersion !== 2) fail('不支持的请求版本');
   const parameters = record(source.parameters, '请求 parameters'), validated: GenerationParameters = {};
   if (Object.keys(parameters).length > 200) fail('请求参数过多');
   for (const [key, value] of Object.entries(parameters)) {
@@ -359,7 +370,19 @@ function validateRequest(raw: unknown, models: ModelProfile[]): GenerationReques
   if (!/^\d{4}-\d\d-\d\dT/.test(createdAt) || !Number.isFinite(Date.parse(createdAt))) fail('请求创建时间不是有效的 ISO 日期');
   const argv = stringArray(source.argv, '请求 argv', 4096), command = text(source.command, '请求 command');
   if (!argv.length || JSON.stringify(tokenize(command)) !== JSON.stringify(argv)) fail('请求 command 与 argv 不一致');
-  const request: GenerationRequest = { apiVersion: 1, requestId: identifier(source.requestId, '请求 ID'), createdAt, projectId: identifier(source.projectId, '项目 ID'), projectName: text(source.projectName, '项目名称', false, 200), projectProfileId: identifier(source.projectProfileId, '运行配置 ID'), profileId: identifier(source.profileId, '模型 ID'), profileVersion: positiveInteger(source.profileVersion, '模型版本'), parameters: validated, argv, command };
+  const request: GenerationRequest = { apiVersion: source.apiVersion, requestId: identifier(source.requestId, '请求 ID'), createdAt, projectId: identifier(source.projectId, '项目 ID'), projectName: text(source.projectName, '项目名称', false, 200), projectProfileId: identifier(source.projectProfileId, '运行配置 ID'), profileId: identifier(source.profileId, '模型 ID'), profileVersion: positiveInteger(source.profileVersion, '模型版本'), parameters: validated, argv, command };
+  if (source.apiVersion === 2) {
+    const executionSource = record(source.execution, '请求 execution');
+    allowedKeys(executionSource, ['kind', 'version', 'envName', 'scriptName', 'scriptContent', 'argv', 'command'], '请求 execution');
+    const config = validateSlurmExecutionDraft({ kind: executionSource.kind, version: executionSource.version, envName: executionSource.envName, scriptName: executionSource.scriptName, scriptContent: executionSource.scriptContent });
+    const issues = inspectSlurmExecution(config);
+    if (issues.length) fail(issues.map(issue => issue.message).join('；'));
+    const submissionArgv = stringArray(executionSource.argv, '请求 execution.argv', 4100);
+    const submissionCommand = text(executionSource.command, '请求 execution.command');
+    const expectedArgv = ['sbatch', config.scriptName, `ENVNAME=${config.envName}`, ...argv];
+    if (JSON.stringify(submissionArgv) !== JSON.stringify(expectedArgv) || JSON.stringify(tokenize(submissionCommand)) !== JSON.stringify(expectedArgv)) fail('Slurm 提交包装与推理 argv 不一致');
+    request.execution = { ...config, argv: submissionArgv, command: submissionCommand };
+  } else if (source.execution !== undefined) fail('历史 v1 请求不支持 execution，不可静默改写');
   const model = models.find(item => item.id === request.profileId && item.version === request.profileVersion);
   if (model) {
     const parsed = parseCommand(model, command), inspected = valuesInspection(model, parsed.values);
@@ -394,7 +417,7 @@ export function validateGenerationState(raw: unknown): GenerationState {
     const values: GenerationValues = {};
     for (const [key, value] of Object.entries(rawValues)) values[identifier(key, '参数 key')] = text(value, '参数草稿值', true);
     if (profile.editSource !== 'form' && profile.editSource !== 'command') fail('editSource 必须为 form 或 command');
-    return { id: identifier(profile.id, '运行配置 ID'), name: text(profile.name, '运行配置名称', false, 200), modelProfileId: identifier(profile.modelProfileId, '模型 ID'), modelProfileVersion: positiveInteger(profile.modelProfileVersion, '模型版本'), values, commandText: text(profile.commandText, '命令草稿', true), editSource: profile.editSource } satisfies ProjectGenerationProfile;
+    return { id: identifier(profile.id, '运行配置 ID'), name: text(profile.name, '运行配置名称', false, 200), modelProfileId: identifier(profile.modelProfileId, '模型 ID'), modelProfileVersion: positiveInteger(profile.modelProfileVersion, '模型版本'), values, commandText: text(profile.commandText, '命令草稿', true), editSource: profile.editSource, execution: profile.execution === undefined ? createSlurmExecution() : validateSlurmExecutionDraft(profile.execution) } satisfies ProjectGenerationProfile;
   });
   unique(projectProfiles.map(profile => profile.id), '运行配置 ID');
   unique(projectProfiles.map(profile => `${profile.modelProfileId}\0${profile.name}`), '同模型的运行配置名称');

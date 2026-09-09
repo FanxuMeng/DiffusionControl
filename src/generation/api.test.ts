@@ -1,11 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchGenerationCapabilities, fetchGenerationJob, GenerationRejectedError, isTerminalJob, normalizeApiBase, submitGenerationJob } from './api';
+import { fetchGenerationCapabilities, fetchGenerationJob, GenerationRejectedError, isTerminalJob, normalizeApiBase, readApiEndpoint, SAME_ORIGIN_API_BASE, saveApiEndpoint, submitGenerationJob, supportsSlurmExecution } from './api';
+import { createSlurmExecution } from './slurm';
 import type { GenerationRequest } from './types';
 
-const request: GenerationRequest = { apiVersion: 1, requestId: 'request-1', createdAt: '2026-09-08T00:00:00.000Z', projectId: 'studio', projectName: '示例', projectProfileId: 'draft-1', profileId: 'symphomotion-single-gpu', profileVersion: 1, parameters: { seed: 42 }, argv: ['python3', 'infer.py', '--seed', '42'], command: 'python3 infer.py --seed 42' };
+const request: GenerationRequest = { apiVersion: 2, requestId: 'request-1', createdAt: '2026-09-09T00:00:00.000Z', projectId: 'studio', projectName: '示例', projectProfileId: 'draft-1', profileId: 'symphomotion-single-gpu', profileVersion: 1, parameters: { seed: 42 }, argv: ['python3', 'infer.py', '--seed', '42'], command: 'python3 infer.py --seed 42', execution: { ...createSlurmExecution(), argv: ['sbatch', 'job.gpu', 'ENVNAME=base', 'python3', 'infer.py', '--seed', '42'], command: 'sbatch job.gpu ENVNAME=base python3 infer.py --seed 42' } };
 const job = { id: 'job-1', requestId: 'request-1', status: 'running', progress: .4, message: '运行中', outputs: [] };
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+describe('CE endpoint settings', () => {
+  function storage(initial: string | null = null) {
+    let value = initial;
+    vi.stubGlobal('localStorage', { getItem: () => value, setItem: (_key: string, next: string) => { value = next; } });
+  }
+
+  it('defaults to /api for missing or blank browser and build settings', () => {
+    for (const configured of [undefined, '', '  ']) {
+      vi.stubEnv('VITE_CE_API_BASE_URL', configured);
+      for (const saved of [null, '', '  ']) {
+        storage(saved);
+        expect(readApiEndpoint()).toBe('/api');
+      }
+    }
+  });
+
+  it('preserves explicit browser overrides and falls back to build configuration', () => {
+    vi.stubEnv('VITE_CE_API_BASE_URL', ' https://deployment.example/api ');
+    storage(' https://existing.example/api ');
+    expect(readApiEndpoint()).toBe('https://existing.example/api');
+    storage('');
+    expect(readApiEndpoint()).toBe('https://deployment.example/api');
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('Storage unavailable'); } });
+    expect(readApiEndpoint()).toBe('https://deployment.example/api');
+  });
+
+  it('restores /api over custom settings without fixing it to the current host', async () => {
+    storage('https://existing.example/api');
+    vi.stubEnv('VITE_CE_API_BASE_URL', 'https://deployment.example/api');
+    saveApiEndpoint(SAME_ORIGIN_API_BASE);
+    expect(readApiEndpoint()).toBe('/api');
+    const fetch = vi.fn().mockImplementation(async () => response({ apiVersion: 2, profiles: [], executionModes: ['slurm_sbatch_v1'] }));
+    vi.stubGlobal('fetch', fetch);
+    for (const origin of ['https://ce.example', 'http://localhost:5174']) {
+      vi.stubGlobal('window', { location: { origin } });
+      await fetchGenerationCapabilities(readApiEndpoint());
+      expect(fetch).toHaveBeenLastCalledWith(`${origin}/api/inference/capabilities`, expect.objectContaining({ method: 'GET', credentials: 'include' }));
+      expect(readApiEndpoint()).toBe('/api');
+    }
+  });
+});
 
 describe('CE generation task client', () => {
   it('normalizes API paths and rejects credentials or non-HTTP endpoints', () => {
@@ -22,6 +65,29 @@ describe('CE generation task client', () => {
     await expect(fetchGenerationCapabilities('https://ce.example/api')).rejects.toThrow('能力清单');
   });
 
+  it('requires explicit v2 Slurm capability even when a model is registered', async () => {
+    const profiles = [{ id: 'symphomotion-single-gpu', version: 1 }];
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response({ apiVersion: 1, profiles }))
+      .mockResolvedValueOnce(response({ apiVersion: 2, profiles }))
+      .mockResolvedValueOnce(response({ apiVersion: 2, profiles, executionModes: ['slurm_sbatch_v1'] }))
+      .mockResolvedValueOnce(response({ apiVersion: 2, profiles, executionModes: 'slurm_sbatch_v1' })));
+    expect(supportsSlurmExecution(await fetchGenerationCapabilities('https://ce.example'))).toBe(false);
+    expect(supportsSlurmExecution(await fetchGenerationCapabilities('https://ce.example'))).toBe(false);
+    expect(supportsSlurmExecution(await fetchGenerationCapabilities('https://ce.example'))).toBe(true);
+    expect(supportsSlurmExecution({ apiVersion: 1, profiles, executionModes: ['slurm_sbatch_v1'] })).toBe(false);
+    await expect(fetchGenerationCapabilities('https://ce.example')).rejects.toThrow('执行模式');
+  });
+
+  it('never posts old or incomplete requests as direct inference', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const legacy = { ...request, apiVersion: 1 as const }; delete legacy.execution;
+    await expect(submitGenerationJob('https://ce.example', legacy)).rejects.toThrow('历史 v1');
+    const incomplete = { ...request }; delete incomplete.execution;
+    await expect(submitGenerationJob('https://ce.example', incomplete)).rejects.toThrow('Slurm');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('submits the exact snapshot with an idempotency key and leaves the input untouched', async () => {
     const fetch = vi.fn().mockImplementation(async () => response(job)); vi.stubGlobal('fetch', fetch);
     const before = structuredClone(request);
@@ -29,6 +95,8 @@ describe('CE generation task client', () => {
     expect(received.progress).toBe(.4);
     expect(fetch.mock.calls[0][1].headers['Idempotency-Key']).toBe(request.requestId);
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(before);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).execution.scriptContent).toContain('exec "$@"');
+    expect(JSON.parse(fetch.mock.calls[0][1].body).execution.argv.slice(0, 3)).toEqual(['sbatch', 'job.gpu', 'ENVNAME=base']);
     expect(request).toEqual(before);
     await submitGenerationJob('https://ce.example/api', request);
     expect(fetch.mock.calls[1][1].body).toBe(fetch.mock.calls[0][1].body);

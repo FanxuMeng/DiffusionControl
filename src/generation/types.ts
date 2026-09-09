@@ -12,15 +12,21 @@ export interface ModelProfile {
   description: string; inputRequirements: string[];
   source?: { url: string; revision: string };
 }
+export interface SlurmExecutionConfig {
+  kind: 'slurm_sbatch'; version: 1; envName: string; scriptName: string; scriptContent: string;
+}
+export interface SlurmRequestExecution extends SlurmExecutionConfig { argv: string[]; command: string }
 export interface ProjectGenerationProfile {
   id: string; name: string; modelProfileId: string; modelProfileVersion: number;
   values: GenerationValues; commandText: string; editSource: 'form' | 'command';
+  execution: SlurmExecutionConfig;
 }
 export interface GenerationRequest {
-  apiVersion: 1; requestId: string; createdAt: string;
+  apiVersion: 1 | 2; requestId: string; createdAt: string;
   projectId: string; projectName: string; projectProfileId: string;
   profileId: string; profileVersion: number;
   parameters: GenerationParameters; argv: string[]; command: string;
+  execution?: SlurmRequestExecution;
 }
 export interface GenerationJob {
   id: string; requestId: string;
@@ -40,6 +46,7 @@ export interface GenerationIssue { field?: string; message: string }
 export interface GenerationInspection {
   model?: ModelProfile; draft?: ProjectGenerationProfile; issues: GenerationIssue[];
   argv: string[]; parameters: GenerationParameters | null;
+  submissionArgv: string[]; submissionCommand: string;
   commandParseable: boolean; canExecute: boolean;
 }
-export interface GenerationCapabilities { apiVersion: 1; profiles: { id: string; version: number }[] }
+export interface GenerationCapabilities { apiVersion: 1 | 2; profiles: { id: string; version: number }[]; executionModes?: string[] }

@@ -1,4 +1,6 @@
-# Diffusion 生成面板 v0.5
+# Diffusion 生成面板 v0.6
+
+2026-09-09 更新：后端部署位置和新提交 API v2 以 [Slurm 执行规格](slurm-execution.md) 为准。新增 ENVNAME、Bash 脚本编辑／导入和完整 sbatch 预览；下文 v1 API 保留为历史兼容说明。
 
 日期：2026-09-08。已按先更新本文与关联需求、后实现代码的顺序完成 v0.5。D24–D26 已确认：首批 SymphoMotion 与自定义模型 profile；通过可配置 CE 任务 API 执行，未连接时可编辑／校验／导出请求；模型 profile 定义字段与命令模板，项目 profile 保存可命名的运行配置。
 
@@ -28,7 +30,7 @@
 - 命令可以直接编辑。支持空白、单／双引号、反斜线转义、续行、`--key value` 和 `--key=value`；成功识别后反向更新字段。删除参数后恢复模型默认值或空值，不保留被删除参数的旧值。
 - 未闭合引号、未知参数、重复参数、错误入口、类型／范围错误均说明原因。无法解析时保留原命令和最近可解析表单，禁止使用陈旧值提交。提供“从参数重建命令”显式恢复。
 - 执行和请求导出前重新检查当前命令及字段。切换模板不向其他模型搬运同名字段，不修改轨迹或项目时间轴。
-- 编辑器表示单个进程 argv，不支持管道、重定向、命令连接、变量／命令替换或 shell 脚本；需要另一参数集合／入口时导入相应 profile。正确加引号的普通文本保持原义。
+- 推理命令编辑器表示单个进程 argv，不支持管道、重定向、命令连接、变量／命令替换；需要另一参数集合／入口时导入相应 profile。正确加引号的普通文本保持原义。v0.6 的独立 Bash 编辑区支持完整脚本，Slurm 包装不进入模型参数解析。
 
 ## SymphoMotion 模板
 
@@ -42,9 +44,11 @@ CLI 必需字段为 `pretrained_model_path/config_path/output_dir`；面板还�
 
 ## CE API 契约 v1
 
-根地址由面板填写或公开配置 `VITE_CE_API_BASE_URL` 提供，不保存服务端密钥。推荐同源 HTTPS 网关与既有登录态，跨源由后端配置 CORS／认证。
+本节保留 v0.5 的历史接口语义。v0.6 新提交要求 [API v2 与 Slurm 能力](slurm-execution.md#api-v2-与兼容性)，禁止向只支持 v1 的服务提交推理。历史 v1 作业仍能查询和导出；下述旧 POST 格式不能作为当前 CE 执行器实现依据。
 
-可复制 `.env.example` 为 `.env.local` 设置 `VITE_CE_API_BASE_URL=https://你的CE网关/api`，然后重启开发服务器；也可直接填面板。浏览器已保存的地址优先于构建配置。请求使用 `credentials: include`，不在前端保存 CE 密钥；跨源服务需允许当前前端 origin、GET／POST，以及 `Content-Type`、`Idempotency-Key` 请求头。当前只实现 HTTP(S) API，不直接运行 SSH／调度器命令。
+当前连接方式已确定为同源 `/api`，地址覆盖收进高级设置；具体优先级与恢复行为见 [同源连接](slurm-execution.md#同源连接与高级设置)，不保存服务端密钥。跨源覆盖时由后端配置 CORS／认证。
+
+可复制 `.env.example` 为 `.env.local` 设置公开部署默认值 `VITE_CE_API_BASE_URL`，然后重启开发服务器；正常同源部署无需修改 `/api`。浏览器已保存的非空地址优先于构建配置，均为空则回退 `/api`。请求使用 `credentials: include`，不在前端保存 CE 密钥；跨源服务需允许当前前端 origin、GET／POST，以及 `Content-Type`、`Idempotency-Key` 请求头。浏览器只调用 HTTP(S) API，不直接运行 SSH／调度器命令。
 
 | 请求 | 数据与语义 |
 | --- | --- |
@@ -81,7 +85,7 @@ POST 接受及后续 GET 状态响应共用以下结构，`requestId` 必须回�
 原型持久化数据中的 `generation` 可选，旧项目缺字段时初始化；运行时 `Project.generation` 始终存在，格式为 `{version:1, selectedModelId, activeProfileIds, projectProfiles, customProfiles, submissions}`。
 
 - `activeProfileIds`：每个模型上次选中的命名配置 ID。
-- `projectProfiles`：`{id,name,modelProfileId,modelProfileVersion,values,commandText,editSource}`；values 保存原始输入字符串，editSource 为 form／command。
+- `projectProfiles`：`{id,name,modelProfileId,modelProfileVersion,values,commandText,editSource,execution}`；values 保存原始输入字符串，editSource 为 form／command；v0.6 的 execution 保存 ENVNAME、脚本名称和全文，旧配置缺少时补充默认值。
 - `customProfiles`：完整模型 schema，保证备份自包含。
 - `submissions`：`{endpoint,request,job?,rejection?}`，保存不可变请求与接受后的作业状态，或明确拒绝记录；job 与 rejection 互斥，不包含凭据。
 
@@ -97,6 +101,8 @@ POST 接受及后续 GET 状态响应共用以下结构，`requestId` 必须回�
 6. 运行有意义的解析／持久化／接口回归和生产构建；浏览器与真实 CE 的验证范围如实记录。
 
 ## 验证记录
+
+v0.6 的当前验证见 [Slurm 验证记录](slurm-execution.md#验证记录)。以下为 v0.5 历史验证。
 
 2026-09-08：`npm test` 的 **15 个文件、123 项测试通过**，包含 35 项 profile／解析校验、9 项 CE HTTP 客户端测试、4 项项目持久化集成测试及既有 75 项回归。补充空列表草稿校验后，对应 35 项解析测试再次通过。`npm run build` 通过 TypeScript 与 Vite 生产构建；现有主包仍有大于 500 kB 的体积提示。6 份 JSON 示例均能解析，自定义 profile 示例通过运行时校验并生成对应 8 参数命令。
 
