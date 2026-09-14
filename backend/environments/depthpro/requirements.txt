@@ -1,0 +1,21 @@
+# Python 3.10. Run from the DiffusionControl repository root.
+# Prepare third_party/ml-depth-pro at the revision in docs/model-environments.md.
+# PyTorch3D is a separate CUDA extension; this file does not claim to install it.
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.org/simple
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
+numpy==1.26.4
+Pillow==10.4.0
+timm==1.0.15
+pillow-heif==0.22.0
+matplotlib==3.10.1
+kornia==0.8.2
+einops==0.8.1
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+tqdm==4.67.1
+packaging==24.2
+setuptools==75.8.0
+wheel==0.45.1
+-e ./third_party/ml-depth-pro

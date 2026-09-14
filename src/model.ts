@@ -1,10 +1,12 @@
 import { DEFAULT_MOVE_SPEED } from './navigationSpeed';
-import { createGenerationState, validateGenerationState } from './generation/domain';
+import { createGenerationState, repairLegacyEnvironments, validateGenerationState } from './generation/domain';
+import { validateMotionControls } from './workflow/motionControls';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { CameraCalibration, CameraIntrinsicsTrack, ControlSettings, Face, MigrationResult, MotionClip, Pose, Project, Quat, Sample, SceneObject, Trajectory, Vec3 } from './types';
 import { createCameraIntrinsics, createDefaultCalibration, deriveFov, exportCameraIntrinsics, validateCameraCalibration, validateCameraIntrinsics } from './cameraMath';
 import { exportClip, makeDefaultClip, sampleSourceTrajectory, validateClip } from './timelineModel';
 import { makeTrajectoryPreview } from './trajectoryPreview';
+import { validateWorkflowState } from './workflow/state';
 export * from './cameraMath';
 export * from './timelineModel';
 export { makeTrajectoryPreview } from './trajectoryPreview';
@@ -36,9 +38,9 @@ const faceNormals: Record<Face, Vec3> = {
  * These are canonical OpenCV world poses, never Three.js viewer poses.
  */
 export function frontPose(object: SceneObject, face: Face): Pose {
-  const x = new Vector3(...faceNormals[face]);
+  const x = new Vector3(...faceNormals[face]).applyQuaternion(new Quaternion(...(object.boxQuaternion || [0, 0, 0, 1])));
   const z = new Vector3(0, -1, 0).addScaledVector(x, x.y);
-  if (z.lengthSq() < 1e-8) z.set(0, 0, 1);
+  if (z.lengthSq() < 1e-8) z.set(0, 0, 1).addScaledVector(x, -x.z);
   z.normalize();
   const y = new Vector3().crossVectors(z, x).normalize();
   const quaternion = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
@@ -292,7 +294,7 @@ function projectDate(value: unknown, field: string): string {
 
 function projectImage(value: unknown, field: string): string {
   const result = projectString(value, field, true, 30000000);
-  if (result && !/^(data:image\/(?:png|jpeg|jpg|webp|gif|avif|svg\+xml)[;,]|https?:\/\/|blob:)/i.test(result)) {
+  if (result && !/^(data:image\/(?:png|jpeg|jpg|webp|gif|avif|svg\+xml)[;,]|https?:\/\/|blob:|\/api\/(?:workflow\/assets\/[a-f0-9]{64}\/image$|inference\/jobs\/[a-zA-Z0-9-]+\/outputs\/\d+$))/i.test(result)) {
     throw new Error(`项目字段 ${field} 必须是图片数据或有效的图片 URL。`);
   }
   return result;
@@ -399,7 +401,8 @@ export function validatePrototypeProject(raw: unknown): Project {
   const demoSceneRevision = demoRevision(data);
   if (data.fourD !== 'missing' && data.fourD !== 'ready' && data.fourD !== 'stale') throw new Error('项目 fourD 状态无效。');
   const geometryReady = projectBoolean(data.geometryReady, 'geometryReady');
-  if (geometryReady && data.demoScene === null) throw new Error('原型暂只支持演示场景的 3D 几何；外部点云需 CE 服务接入后加载。');
+  const workflow = validateWorkflowState(data.workflow, String(data.id));
+  if (geometryReady && data.demoScene === null && !workflow?.sceneJobId) throw new Error('外部点云需要有效的 CE 重建资产。');
   if (!geometryReady && data.fourD !== 'missing') throw new Error('没有有效 3D 几何时，4D 必须为 missing。');
   const referenceCamera = data.referenceCamera === null ? null : validateCameraCalibration(data.referenceCamera);
   const cameraIntrinsics = data.cameraIntrinsics === null ? null : validateCameraIntrinsics(data.cameraIntrinsics);
@@ -408,7 +411,7 @@ export function validatePrototypeProject(raw: unknown): Project {
     if (!item) throw new Error(`项目第 ${index + 1} 个物体必须是对象。`);
     const id = projectString(item.id, 'object.id', false, 200);
     if (id === 'camera') throw new Error('物体 ID 不能使用保留名称 camera。');
-    if (!['chair', 'plant', 'table', 'sphere', 'humanoid'].includes(String(item.shape))) throw new Error('项目物体 shape 字段无效。');
+    if (!['chair', 'plant', 'table', 'sphere', 'humanoid', 'pointcloud'].includes(String(item.shape))) throw new Error('项目物体 shape 字段无效。');
     if (item.front !== null && !Object.hasOwn(faceNormals, String(item.front))) throw new Error('项目物体 front 必须是六个轴向面之一或 null。');
     if (!['unassigned', 'static', 'trajectory'].includes(String(item.motion))) throw new Error('项目物体 motion 字段无效。');
     const color = projectString(item.color, 'object.color', false, 7);
@@ -425,6 +428,15 @@ export function validatePrototypeProject(raw: unknown): Project {
       initialPose, motion: item.motion as SceneObject['motion'], trajectory: null, clip: null, history: [],
       ...(item.maskPreview !== undefined ? { maskPreview: projectImage(item.maskPreview, 'object.maskPreview') } : {}),
     };
+    if (item.boxQuaternion !== undefined) {
+      object.boxQuaternion = projectPose({ position: center, quaternion: item.boxQuaternion }, 'object.boxQuaternion').quaternion;
+    }
+    if (item.reconstruction !== undefined) {
+      const source = record(item.reconstruction);
+      if (!source || typeof source.jobId !== 'string' || !/^[a-zA-Z0-9-]{1,200}$/.test(source.jobId) || source.sceneJobId !== workflow?.sceneJobId) throw new Error('物体点簇与场景版本不一致。');
+      object.reconstruction = { jobId: source.jobId, sceneJobId: source.sceneJobId as string };
+    }
+    if (item.shape === 'pointcloud' && !object.reconstruction) throw new Error('点云物体缺少关联作业。');
     const expected = frontPose(object, object.front ?? '+x');
     if (new Quaternion(...initialPose.quaternion).angleTo(new Quaternion(...expected.quaternion)) > 1e-5) {
       throw new Error('物体 initialPose 朝向与所选正面不一致。');
@@ -460,7 +472,9 @@ export function validatePrototypeProject(raw: unknown): Project {
     referenceCamera, cameraIntrinsics, cameraClip,
     cameraHistory: projectArray(data.cameraHistory, 'cameraHistory', 500).map(entry => projectTrajectory(entry, 'camera')),
     duration, fps, updatedAt: projectDate(data.updatedAt, 'updatedAt'),
-    generation: data.generation === undefined ? createGenerationState() : validateGenerationState(data.generation),
+    generation: data.generation === undefined ? createGenerationState() : repairLegacyEnvironments(validateGenerationState(data.generation)),
+    ...(data.motionControls !== undefined ? { motionControls: validateMotionControls(data.motionControls) } : {}),
+    ...(workflow ? { workflow } : {}),
   };
 }
 

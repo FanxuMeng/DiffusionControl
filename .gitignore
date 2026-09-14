@@ -3,3 +3,9 @@ dist/
 .env.local
 .DS_Store
 *.tsbuildinfo
+var/
+projects/
+__pycache__/
+*.pyc
+backend/config.local.json
+third_party/

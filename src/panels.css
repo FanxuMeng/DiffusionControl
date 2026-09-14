@@ -15,6 +15,17 @@
 .dcp-projects-body { padding: 0 15px 13px; }
 .dcp-project-list { display: flex; gap: 11px; overflow-x: auto; scrollbar-width: thin; padding: 0 0 7px; }
 .dcp-project-card { width: 145px; min-width: 145px; background: none; border: 0; text-align: left; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dcp-project-entry { position: relative; }
+.dcp-project-delete { position: absolute; right: 5px; top: 5px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 4px; }
+.dcp-project-delete:hover { color: var(--danger-text); }
+.dcp-project-caption { display: flex; align-items: center; gap: 4px; margin: 5px 0; width: 145px; }
+.dcp-project-caption .dcp-project-name { flex: 1; min-width: 0; }
+.dcp-project-rename { display: flex; flex-wrap: wrap; align-items: center; width: 145px; gap: 3px; padding: 5px 0; }
+.dcp-project-rename input { width: 100%; min-width: 0; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border-strong); padding: 4px; font: inherit; }
+.dcp-project-rename small { white-space: normal; color: var(--danger-text); }
+.dcp-object-pending { padding: 12px; border: 1px dashed var(--border-strong); border-radius: 5px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.dcp-object-pending p, .dcp-object-pending small { color: var(--text-secondary); }
+.dcp-object-pending .dcp-button { display: block; margin-top: 8px; }
 .dcp-project-picture { height: 86px; border-radius: 3px; overflow: hidden; width: 100%; position: relative; background: var(--surface-inset); border: 1px solid var(--border); }
 .dcp-project-picture > img { height: 100%; width: 100%; object-fit: cover; }
 .dcp-project-card.is-selected .dcp-project-picture { border: 2px solid var(--border-strong); }
@@ -36,6 +47,11 @@
 .dcp-object-list { display: flex; flex-direction: column; gap: 7px; }
 .dcp-object-card { border: 1px solid var(--border); border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
 .dcp-object-card.is-selected { border-color: var(--border-strong); background: var(--surface-selected); }
+.dcp-object-header { display: flex; align-items: center; gap: 3px; padding-right: 6px; }
+.dcp-object-header > .dcp-object-heading { flex: 1; min-width: 0; width: auto; }
+.dcp-object-header > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dcp-object-delete { flex-shrink: 0; }
+.dcp-object-delete:hover:not(:disabled) { color: var(--danger-text); background: var(--surface-hover); }
 .dcp-object-heading { display: flex; align-items: center; gap: 9px; padding: 9px; width: 100%; background: none; border: 0; text-align: left; }
 .dcp-object-heading > svg { color: var(--text-secondary); }
 .dcp-object-thumb { width: 42px; height: 42px; flex-shrink: 0; background: var(--surface-inset); border: 1px solid color-mix(in srgb,var(--object-color) 40%,var(--border)); color: var(--object-color); border-radius: 3px; display: grid; place-items: center; overflow: hidden; }

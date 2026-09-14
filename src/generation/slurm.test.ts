@@ -21,8 +21,8 @@ describe('Slurm execution configuration and immutable wrappers', () => {
     const state = createGenerationState(), result = inspect(state), built = request(state);
     expect(built.apiVersion).toBe(2);
     expect(isSlurmRequest(built)).toBe(true);
-    expect(result.submissionArgv).toEqual(['sbatch', 'job.gpu', 'ENVNAME=base', ...result.argv]);
-    expect(built.execution).toEqual({ ...config, argv: result.submissionArgv, command: result.submissionCommand });
+    expect(result.submissionArgv).toEqual(['sbatch', 'job.gpu', 'ENVNAME=symphomotion', ...result.argv]);
+    expect(built.execution).toEqual({ ...config, envName: 'symphomotion', argv: result.submissionArgv, command: result.submissionCommand });
     expect(built.parameters).not.toHaveProperty('ENVNAME');
     expect(built.parameters).not.toHaveProperty('envName');
   });
@@ -63,7 +63,7 @@ describe('Slurm execution configuration and immutable wrappers', () => {
     const inner = inspect(state).draft!.commandText;
     state = updateExecution(state, originalId, { envName: 'wan', scriptName: 'custom.gpu', scriptContent: DEFAULT_SLURM_SCRIPT.replace('-G 2', '-G 1') });
     expect(inspect(state).draft!.commandText).toBe(inner);
-    expect(inspect(initial).draft!.execution).toEqual(createSlurmExecution());
+    expect(inspect(initial).draft!.execution).toEqual({ ...createSlurmExecution(), envName: 'symphomotion' });
     state = createProjectProfile(state, 'Copied', originalId);
     const copiedId = active(state);
     expect(inspect(state).draft!.execution.envName).toBe('wan');

@@ -24,6 +24,16 @@ const inspection = (state: GenerationState) => inspectProjectProfile(state, curr
 const request = (state: GenerationState, requestId = 'request-1') => buildGenerationRequest(state, current(state), { id: 'project-1', name: '项目甲' }, requestId);
 
 describe('model profile definitions and isolated run configurations', () => {
+  it('roundtrips the sharded model entry while preserving the native draft', () => {
+    const original = createGenerationState();
+    const native = original.projectProfiles[0];
+    const state = selectModel(original, 'symphomotion-multi-gpu');
+    const built = request(state);
+    expect(built.argv.slice(0, 4)).toEqual(['python3', '../../backend/workers/symphomotion.py', '--memory_mode', 'multi_gpu']);
+    expect(inspection(updateCommand(state, current(state), built.command)).argv).toEqual(built.argv);
+    expect(validateGenerationState(state)).toEqual(state);
+    expect(state.projectProfiles.find(profile => profile.id === native.id)).toEqual(native);
+  });
   it('validates the pinned built-in profile and builds its actual argument names', () => {
     for (const model of BUILTIN_MODEL_PROFILES) expect(validateModelProfile(model)).toEqual(model);
     const state = createGenerationState(), result = inspection(state);

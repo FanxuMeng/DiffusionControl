@@ -78,7 +78,12 @@ export async function fetchGenerationCapabilities(endpoint: string, signal?: Abo
   const profiles = raw.profiles.map(value => {
     const profile = object(value), version = profile.version;
     if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error('CE 模型 profile 版本无效。');
-    return { id: id(profile.id, 'profile.id'), version };
+    let environmentNames: string[] | undefined;
+    if (profile.environmentNames !== undefined) {
+      if (!Array.isArray(profile.environmentNames) || profile.environmentNames.length > 100) throw new Error('CE 模型环境清单无效。');
+      environmentNames = profile.environmentNames.map(value => id(value, 'environmentName'));
+    }
+    return { id: id(profile.id, 'profile.id'), version, ...(environmentNames ? { environmentNames } : {}) };
   });
   if (new Set(profiles.map(profile => `${profile.id}@${profile.version}`)).size !== profiles.length) throw new Error('CE 能力清单包含重复的模型版本。');
   let executionModes: string[] | undefined;
@@ -108,7 +113,8 @@ function parseJob(rawValue: unknown, endpoint: string, requestId: string, jobId?
     if (!path.trim() || path.startsWith('//') || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('CE 输出链接必须为可访问的 HTTP(S) 资产。');
     return { name, url: url.toString() };
   });
-  return { id: responseId, requestId, status: status as GenerationJob['status'], message: text(raw.message, 'job.message'), outputs, ...(raw.progress !== undefined ? { progress: raw.progress as number } : {}) };
+  if (raw.cancelRequested !== undefined && typeof raw.cancelRequested !== 'boolean') throw new Error('CE 取消意图格式无效。');
+  return { id: responseId, requestId, status: status as GenerationJob['status'], message: text(raw.message, 'job.message'), outputs, ...(raw.progress !== undefined ? { progress: raw.progress as number } : {}), ...(raw.cancelRequested !== undefined ? { cancelRequested: raw.cancelRequested as boolean } : {}) };
 }
 
 export async function submitGenerationJob(endpoint: string, request: GenerationRequest, signal?: AbortSignal): Promise<GenerationJob> {
@@ -123,3 +129,19 @@ export async function fetchGenerationJob(endpoint: string, jobId: string, reques
   return parseJob(raw, endpoint, requestId, jobId);
 }
 export function isTerminalJob(job: GenerationJob): boolean { return ['succeeded', 'failed', 'cancelled'].includes(job.status); }
+
+export async function cancelGenerationJob(endpoint: string, jobId: string, requestId: string): Promise<GenerationJob> {
+  id(jobId, 'jobId'); id(requestId, 'requestId');
+  const raw = await jsonRequest(endpoint, `/inference/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  return parseJob(raw, endpoint, requestId, jobId);
+}
+
+export async function fetchGenerationLogs(endpoint: string, jobId: string): Promise<string> {
+  id(jobId, 'jobId');
+  const raw = object(await jsonRequest(endpoint, `/inference/jobs/${encodeURIComponent(jobId)}/logs`, { method: 'GET' }));
+  return ['stdout.log', 'stderr.log'].map(name => {
+    const log = object(raw[name]);
+    if (typeof log.text !== 'string' || log.text.length > 65536) throw new Error('CE 日志格式或长度无效。');
+    return `${name}${log.truncated ? '（仅末尾 64 KiB）' : ''}\n${log.text}`;
+  }).join('\n\n');
+}

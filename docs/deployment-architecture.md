@@ -1,8 +1,12 @@
 # 浏览器与 CE 集群部署架构 v0.6
 
+2026-09-09 第二阶段实现：新增全局 Slurm 设置、首帧上传、Depth Pro、SAM2.1 Large、mask 精确关联已有 3D 点并拟合 AABB、真实点云前端链路和动态 SymphoMotion 条件导出。现有生成 API 与工作流共同复用 Store／Slurm／取消／日志／下载。实现边界见 [重建工作流](reconstruction-workflow.md)，环境与真实 GPU 状态见 [安装清单](model-environments.md)、[GPU 验收](gpu-validation.md)。下文长期项目同步等规划不因此视为全部完成。
+
 日期：2026-09-09。用户已确定 CE 使用 Slurm：后端 HTTP 服务部署于登录节点，推理以 sbatch 调度至计算节点。v0.6 已实现 ENVNAME、脚本配置、提交预览与 API v2 客户端门禁，执行边界和当前验证见 [Slurm 规格](slurm-execution.md)。
 
-新服务必须声明 API v2、匹配的模型版本和 `slurm_sbatch_v1` 执行能力；旧 API v1 只用于历史作业查询／快照导出，不再接受客户端新提交或重试。HTTP 路径沿用既有生成接口，执行语义以 [API v2](slurm-execution.md#api-v2-与兼容性) 为准。CE 服务实现、Slurm 执行器、权重安装与部署仍需另行接入。
+后端建设补充：已按先文档后代码增加生成/Slurm 后端，采用 FastAPI + SQLite，复用现有 `symphomotion` 推理环境。Web 依赖与 HTTP 验证已完成，服务按用户后续选择在 celn01 的 `0.0.0.0:8000` 运行，通过内网地址访问，无需 SSH 转发；模型因权重未齐默认停用。方案与实际验证分别见 [后端技术方案](backend-implementation.md)、[部署说明](backend-deployment.md)；下文其他能力仍属后续设计。
+
+新服务必须声明 API v2、匹配的模型版本和 `slurm_sbatch_v1` 执行能力；旧 API v1 只用于历史作业查询／快照导出，不再接受客户端新提交或重试。HTTP 路径沿用既有生成接口，执行语义以 [API v2](slurm-execution.md#api-v2-与兼容性) 为准。生成服务与 Slurm 执行器代码已接入并部署 HTTP 入口；权重补齐及真实 Slurm/GPU 联调仍待完成。
 
 本文于 2026-09-05 建立总体架构。除上述客户端外，下文服务划分、项目 API、调度、资产存储和恢复流程仍属需求级设计，不表示已经部署。
 

@@ -1,5 +1,11 @@
 # Diffusion 生成面板 v0.6
 
+2026-09-11 修订设计：ENVNAME 默认值与模型允许环境校验、物体／相机开关、Rendered Frames 与 OMM 验证见 [运动控制修订](motion-controls-and-rendering.md)。该文先于本轮代码修改建立，下文旧行为的差异以该修订为准。
+
+2026-09-09 工作流扩展：生成面板新增“使用全局 Slurm 脚本”，新配置默认采用公共脚本，旧配置保留本地版本。ENVNAME 始终保存在各任务／运行配置。条件导出完成后可填入同一生成面板；该操作检查完整轨迹与标定快照，源数据变化时要求重新导出。详见 [重建工作流](reconstruction-workflow.md)。
+
+2026-09-09 后端接入补充：生成/Slurm 后端代码已加入，面板新增取消作业与日志下载；`cancelRequested:true` 在非终态下显示“取消请求中”，不提前判为已取消。当前服务安装和真实联调状态见 [后端部署说明](backend-deployment.md)。下文早期仅客户端的建设范围保留为历史记录。
+
 2026-09-09 更新：后端部署位置和新提交 API v2 以 [Slurm 执行规格](slurm-execution.md) 为准。新增 ENVNAME、Bash 脚本编辑／导入和完整 sbatch 预览；下文 v1 API 保留为历史兼容说明。
 
 日期：2026-09-08。已按先更新本文与关联需求、后实现代码的顺序完成 v0.5。D24–D26 已确认：首批 SymphoMotion 与自定义模型 profile；通过可配置 CE 任务 API 执行，未连接时可编辑／校验／导出请求；模型 profile 定义字段与命令模板，项目 profile 保存可命名的运行配置。
@@ -38,7 +44,7 @@
 
 CLI 必需字段为 `pretrained_model_path/config_path/output_dir`；面板还要求显式填写条件 CSV 和 ControlNet 路径，避免无意使用上游 demo 或未配置的环境变量。可调字段包括帧数、fps、步数、guidance、seed、negative_prompt、实体数及物体控制参数；物体与拼接输出开关按真实旗标生成。参数控件开放不等于已验证任意尺寸／帧数的模型效果。[官方推理入口](https://github.com/grenoble-zhang/SymphoMotion/blob/bf9af6666c0f8cbb594e64f165be79b44c962763/infer.py)
 
-没有 `--prompt`：全局提示词来自 sample 的 `full_prompt.json`，实体提示词和点集条件通过条件包提供。CSV 中路径相对进程 cwd；输出为 `output_dir/generated_videos`。配置中的 `camera_embedding` 可覆盖 CLI，因此首批不提供看似能独立关闭相机控制的开关。[入口与数据读取](https://github.com/grenoble-zhang/SymphoMotion/blob/bf9af6666c0f8cbb594e64f165be79b44c962763/infer.py)、[官方配置](https://github.com/grenoble-zhang/SymphoMotion/blob/bf9af6666c0f8cbb594e64f165be79b44c962763/configs/uni3c_controlnet_config.json)
+没有 `--prompt`：全局提示词来自 sample 的 `full_prompt.json`，实体提示词和点集条件通过条件包提供。CSV 中路径相对进程 cwd；输出为 `output_dir/generated_videos`。配置中的 `camera_embedding` 可覆盖 CLI，因此本轮相机开关控制导出的相机轨迹：关闭时使用固定参考视角，保留模型所需的几何与相机条件通道。物体开关联动投影框和 `use_object_prompt`。开关位于输入参数区域，关闭隐藏专属字段、保留轨迹，重新开启恢复；更改后须重新导出并填入 Rendered Frames。[入口与数据读取](https://github.com/grenoble-zhang/SymphoMotion/blob/bf9af6666c0f8cbb594e64f165be79b44c962763/infer.py)、[官方配置](https://github.com/grenoble-zhang/SymphoMotion/blob/bf9af6666c0f8cbb594e64f165be79b44c962763/configs/uni3c_controlnet_config.json)
 
 用户可填写已有 CE 条件包路径，因此提交不强制依赖当前演示场景的导出状态；浏览器项目仅提供配置归属。中心轨迹 JSON、WebGL 点云和首帧 data URL 不能冒充上游输入，文件存在性和条件包一致性由服务端检查。
 
@@ -115,3 +121,10 @@ Chrome 实际交互检查使用独立本地端口上的 `generation-qa` 项目�
 - 生成面板可独立折叠／展开，两种主题下布局可读；未连接 CE 时执行禁用，“导出请求”实际下载 JSON 成功。
 
 API 能力匹配、幂等请求内容、HTTP 400／422 拒绝、超时、网络错误、作业 ID 校验及输出 URL 检查由模拟 HTTP 单元测试覆盖。当前没有提供真实 CE 地址，因此未进行服务联调、GPU 推理或真实作业恢复验收；本轮没有部署后端。已有轨迹录制和原生组合键输入未重新进行完整浏览器验收，历史范围见原型指南。
+# 多 GPU 部署扩展（2026-09-10）
+
+新增独立模型 profile `symphomotion-multi-gpu` v1，名称为“SymphoMotion · 多 GPU 模型分片”。入口为项目内 `backend/workers/symphomotion.py --memory_mode multi_gpu`，仍使用原 SymphoMotion 参数和同一 sbatch 提交器。全局脚本需申请一个 task、至少两张 GPU（当前示例的 `-G 2` 已满足），任务 ENVNAME 选择 `symphomotion`。不要用 torchrun 为每张卡各启动一个进程。
+
+原 `symphomotion-single-gpu` v1 的命令和历史保持兼容；它在当前 RTX 5090 上加载完整模型会显存不足，因此不启用。真实条件包的“填入生成面板”选择新分片 profile。模型分片只改变模块所在设备，未量化或降低原权重精度；显存预算、实际测试与限制见 [GPU 验收](gpu-validation.md)。
+
+服务端对原 infer.py 和 profile 中的实际 Python 入口均记录文件证据；分片 wrapper 同样属于提交前／完成后的输入变更检查范围。

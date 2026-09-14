@@ -1,0 +1,8 @@
+# Compatible with the existing Conda base (Python 3.8); do not upgrade Python.
+fastapi==0.124.4
+starlette==0.44.0
+pydantic==2.10.6
+uvicorn==0.33.0
+httpx==0.27.0
+Pillow==10.4.0
+numpy==1.24.4

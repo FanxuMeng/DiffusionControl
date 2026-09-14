@@ -1,5 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { boxError, readBoxTransform, setBoxTransform } from './boxEditing';
+import { createRealSceneGeometry } from './workflow/realScene';
+import SamPromptOverlay from './workflow/SamPromptOverlay';
 import { BASIS, createSceneGeometry, FACE_COLORS, makeBoundingBox } from './sceneGeometry';
 import { advanceFlight, cameraLocalDirection, createFlightState, stopFlight } from './flight';
 import { createDefaultCalibration, speedColor } from './cameraMath';
@@ -58,7 +62,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
   }), []);
 
   useEffect(() => {
-    const host = hostRef.current; if (!host || !props.project.demoScene) { setReady(false); setLabels([]); setCaptureReadout(null); setFailure(null); return; }
+    const host = hostRef.current; if (!host || (!props.project.demoScene && !props.realScene)) { setReady(false); setLabels([]); setCaptureReadout(null); setFailure(null); return; }
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false }); }
     catch { const message = '此设备未能创建 WebGL 场景。请在桌面浏览器中启用硬件加速。'; setFailure(message); propsRef.current.onError(message); return; }
@@ -67,11 +71,11 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
     const scene = new THREE.Scene(); scene.background = new THREE.Color('#e7e3db'); scene.fog = new THREE.Fog('#e7e3db', 9, 23);
     const referenceCalibration = propsRef.current.project.referenceCamera || DEFAULT_CAPTURE, referenceWidth = referenceCalibration.imageWidth, referenceHeight = referenceCalibration.imageHeight;
     renderer.setSize(referenceWidth, referenceHeight, false);
-    const camera = new THREE.PerspectiveCamera(55, FIXED_ASPECT, .045, 90); setCameraPose(camera, zeroPose()); applyCalibratedProjection(camera, referenceCalibration);
+    const camera = new THREE.PerspectiveCamera(55, FIXED_ASPECT, .045, props.project.demoScene ? 90 : 10000); setCameraPose(camera, zeroPose()); applyCalibratedProjection(camera, referenceCalibration);
     scene.add(new THREE.HemisphereLight('#fffae9', '#777a6e', 2.55));
     const sun = new THREE.DirectionalLight('#fff0cf', 3.1); sun.position.set(-5, 7, -1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -9; sun.shadow.camera.right = 9; sun.shadow.camera.top = 9; sun.shadow.camera.bottom = -9; sun.shadow.bias = -.001; sun.shadow.normalBias = .02; sun.target.position.set(0, -.8, -5); scene.add(sun, sun.target);
     const fill = new THREE.DirectionalLight('#f0f5ed', .75); fill.position.set(3, 1, 1); scene.add(fill);
-    const data = createSceneGeometry(propsRef.current.project.objects, propsRef.current.project.demoScene === 'gallery'); scene.add(data.meshRoot, data.cloudRoot); data.cloudRoot.visible = false;
+    const data = props.project.demoScene ? createSceneGeometry(propsRef.current.project.objects, propsRef.current.project.demoScene === 'gallery') : createRealSceneGeometry(propsRef.current.project.objects, props.realScene!); scene.add(data.meshRoot, data.cloudRoot); data.cloudRoot.visible = false;
     const overlay = new THREE.Group(); overlay.quaternion.copy(BASIS); scene.add(overlay);
     const boxRoot = new THREE.Group(), pathRoot = new THREE.Group(), currentCameraRoot = new THREE.Group(); overlay.add(boxRoot, pathRoot, currentCameraRoot); const boxes = new Map<string, THREE.Group>();
     propsRef.current.project.objects.forEach(o => { const box = makeBoundingBox(o); boxes.set(o.id, box); boxRoot.add(box); });
@@ -80,6 +84,14 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
     const worldAxes = new THREE.AxesHelper(.55); worldAxes.position.set(-2.45, 1.47, 3.9); overlay.add(worldAxes);
     const projection = createCaptureProjection(); projection.install(data.cloudRoot); projection.install(overlay);
     const controller: Controller = { observer: createObserver(), rig: null, flight: createFlightState(), keys: new Set(), controlled: false };
+    const draftBox = new THREE.Group(); overlay.add(draftBox); draftBox.visible = false;
+    const draftGeometry = new THREE.BoxGeometry(1, 1, 1);
+    draftBox.add(new THREE.LineSegments(new THREE.EdgesGeometry(draftGeometry), new THREE.LineBasicMaterial({ color: '#ffe08a', depthTest: false, toneMapped: false })));
+    draftGeometry.dispose();
+    const boxControls = new TransformControls(camera, renderer.domElement);
+    boxControls.enabled = false; boxControls.setSize(.9); scene.add(boxControls.getHelper());
+    const boxChanged = () => { if (propsRef.current.boxEdit) propsRef.current.onBoxChange?.(readBoxTransform(draftBox)); };
+    boxControls.addEventListener('objectChange', boxChanged);
     const clearMotion = () => { controller.flight = createFlightState(); controller.keys.clear(); };
     const reset = () => { controller.observer = createObserver(); clearMotion(); };
     const prepare = (target: string) => {
@@ -119,6 +131,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
     const release = () => { cancelPendingControl?.(); clearMotion(); if (document.pointerLockElement === renderer.domElement) document.exitPointerLock(); };
     const runtime: Runtime = { renderer, controller, reset, prepare, release, requestControl, readyState: 'initializing' };
     runtimeRef.current = runtime;
+    if (props.project.demoScene) {
     // Capture the actual source geometry before adding segmentation and editing overlays.
     overlay.visible = false; renderer.render(scene, camera); const reference = renderer.domElement.toDataURL('image/png');
     propsRef.current.onReferenceReady(reference);
@@ -141,6 +154,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
       context.drawImage(renderer.domElement, minX, minY, sw, sh, (192 - dw) / 2, (192 - dh) / 2, dw, dh); previews[object.id] = thumbnail.toDataURL('image/png');
     });
     previewMaterials.forEach(material => material.dispose()); previewScene.remove(previewRoot); previewRoot.clear(); propsRef.current.onObjectPreviewsReady?.(previews);
+    }
     // Independent translucent masks preserve all original material colors and restore
     // the untouched reference immediately when the user hides masks.
     const maskRoot = new THREE.Group(); maskRoot.quaternion.copy(BASIS); scene.add(maskRoot); const masks = new Map<string, THREE.Group>(), maskMaterials: THREE.MeshBasicMaterial[] = [];
@@ -180,7 +194,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
     };
     const contextMenu = (event: Event) => { if (controller.controlled) event.preventDefault(); };
     const click = (event: MouseEvent) => {
-      const p = propsRef.current; if (controller.controlled || p.recordState !== 'preview') return;
+      const p = propsRef.current; if (controller.controlled || p.recordState !== 'preview' || p.boxEdit) return;
       const bounds = renderer.domElement.getBoundingClientRect(), lens = captureLens(p), frameSizeNow = frameSize(width, height, lens);
       const px = event.clientX - bounds.left, py = event.clientY - bounds.top;
       if (px < frameSizeNow.left || px > frameSizeNow.left + frameSizeNow.width || py < frameSizeNow.top || py > frameSizeNow.top + frameSizeNow.height) return;
@@ -191,7 +205,8 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
         const selected = p.project.objects.find(o => o.id === p.selectedObjectId);
         if (selected?.segmented) { const bbox = boxes.get(selected.id); if (bbox) { const hit = raycaster.intersectObjects(bbox.children, false).find(h => h.object.userData.face); if (hit) { p.onFrontPick(selected.id, hit.object.userData.face as Face); return; } } }
       }
-      const hits = raycaster.intersectObjects(Array.from(data.meshes.values()), true); if (hits[0]?.object.userData.objectId) p.onObjectPick(hits[0].object.userData.objectId);
+      raycaster.params.Points.threshold = Math.max(.03, p.settings.pointSize * 2);
+      const hits = raycaster.intersectObjects(Array.from((p.project.demoScene ? data.meshes : data.clouds).values()), true); if (hits[0]?.object.userData.objectId) p.onObjectPick(hits[0].object.userData.objectId);
     };
     const blur = () => { if (controller.controlled) { if (propsRef.current.recordState === 'recording') propsRef.current.onPause(); release(); } };
     const visibility = () => { if (document.hidden) blur(); };
@@ -241,7 +256,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
           const mask = masks.get(object.id); if (mask) { mask.visible = object.segmented; mask.traverse(n => { if (n instanceof THREE.Mesh) { const material = n.material as THREE.MeshBasicMaterial; material.color.set(object.color); material.opacity = object.id === p.selectedObjectId ? .7 : .6; } }); }
         }
         if (bbox) {
-          bbox.visible = p.showBoxes && object.segmented; bbox.position.fromArray(pose.position); bbox.quaternion.copy(displayRotation);
+          bbox.visible = p.showBoxes && object.segmented && p.boxEdit?.objectId !== object.id; bbox.position.fromArray(pose.position); bbox.quaternion.copy(displayRotation).multiply(new THREE.Quaternion(...(object.boxQuaternion || [0, 0, 0, 1])));
           bbox.children.forEach(n => { if (n instanceof THREE.ArrowHelper && n.userData.frontArrow) { n.visible = object.id === p.selectedObjectId && !!object.front; if (object.front) { const axis = object.front[1], sign = object.front[0] === '+' ? 1 : -1; n.setDirection(new THREE.Vector3(axis === 'x' ? sign : 0, axis === 'y' ? sign : 0, axis === 'z' ? sign : 0)); n.setColor(FACE_COLORS[object.front]); } } if (n instanceof THREE.Mesh && n.userData.face) { const m = n.material as THREE.MeshBasicMaterial; m.opacity = object.id === p.selectedObjectId ? (object.front === n.userData.face ? .38 : .10) : .035; m.color.set(FACE_COLORS[n.userData.face as Face]); } });
         }
       }
@@ -252,6 +267,15 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
       else if (following && p.project.camera && p.project.cameraClip) displayedPose = sampleClip(p.project.camera, p.project.cameraClip, sceneTime);
       if (lens) applyCalibratedProjection(camera, lens); else { camera.aspect = width / height; camera.fov = 55; camera.updateProjectionMatrix(); }
       setCameraPose(camera, displayedPose); projection.update(is2d ? null : lens); updatePaths();
+      const editingBox = !is2d && p.boxEdit && p.boxEdit.projectId === p.project.id && !boxError(p.boxEdit.box);
+      draftBox.visible = !!editingBox;
+      boxControls.enabled = !!editingBox && !controller.controlled;
+      if (editingBox && p.boxEdit) {
+        if (boxControls.object !== draftBox) boxControls.attach(draftBox);
+        boxControls.setMode(p.boxEdit.mode); boxControls.setSpace('local');
+        if (!boxControls.dragging) setBoxTransform(draftBox, p.boxEdit.box);
+        boxControls.getHelper().visible = !controller.controlled;
+      } else if (boxControls.object) boxControls.detach();
       const liveCapture = rig?.target === 'camera';
       const captureCalibration = liveCapture ? p.project.referenceCamera || DEFAULT_CAPTURE : p.project.cameraIntrinsics?.calibration || p.project.camera?.cameraIntrinsics?.calibration || p.project.referenceCamera || DEFAULT_CAPTURE;
       const capturePose = liveCapture ? recordingRigPose(rig) : p.project.camera && p.project.cameraClip ? sampleClip(p.project.camera, p.project.cameraClip, sceneTime) : zeroPose();
@@ -287,7 +311,7 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
         };
         p.project.objects.filter(o => o.segmented && (is2d ? p.showMasks : p.showBoxes)).forEach(o => {
           const pose = !is2d && activeObject === o.id && activeObjectPose ? activeObjectPose : !is2d && o.motion === 'trajectory' && o.trajectory && o.clip ? sampleClip(o.trajectory, o.clip, sceneTime) : o.initialPose;
-          const rotation = new THREE.Quaternion(...pose.quaternion).multiply(new THREE.Quaternion(...o.initialPose.quaternion).invert()); let top = Infinity;
+          const rotation = new THREE.Quaternion(...pose.quaternion).multiply(new THREE.Quaternion(...o.initialPose.quaternion).invert()).multiply(new THREE.Quaternion(...(o.boxQuaternion || [0, 0, 0, 1]))); let top = Infinity;
           for (const x of [-o.halfExtents[0], o.halfExtents[0]]) for (const y of [-o.halfExtents[1], o.halfExtents[1]]) for (const z of [-o.halfExtents[2], o.halfExtents[2]]) top = Math.min(top, new THREE.Vector3(x, y, z).applyQuaternion(rotation).y);
           placeLabel(o.id, o.name, o.color, new THREE.Vector3(...pose.position).add(new THREE.Vector3(0, top - .12, 0)));
           if (!is2d && o.id === p.selectedObjectId) {
@@ -310,15 +334,18 @@ export const SceneViewport = forwardRef<SceneHandle, SceneViewportProps>(functio
     return () => {
       disposed = true; runtime.readyState = 'disposed'; cancelAnimationFrame(frame); observer.disconnect(); document.removeEventListener('pointerlockchange', lockChanged); document.removeEventListener('mousemove', mouseMove); window.removeEventListener('keydown', keyDown); window.removeEventListener('keyup', keyUp); renderer.domElement.removeEventListener('contextmenu', contextMenu); renderer.domElement.removeEventListener('click', click); window.removeEventListener('blur', blur); document.removeEventListener('visibilitychange', visibility); release();
       document.removeEventListener('wheel', wheel);
+      boxControls.removeEventListener('objectChange', boxChanged); boxControls.dispose();
       maskMaterials.forEach(material => material.dispose()); maskRoot.clear(); data.dispose(); disposeGroup(overlay); renderer.dispose(); renderer.domElement.remove(); runtimeRef.current = null;
     };
-  }, [props.project.id, props.project.demoScene, props.project.demoSceneRevision]);
+  }, [props.project.id, props.project.demoScene, props.project.demoSceneRevision, props.realScene]);
 
   const external = !props.project.demoScene;
   const cameraDrawingVisible = !(props.followCamera && props.recordState === 'preview') && !(props.target === 'camera' && usesRecordingRig(props.recordState));
   return <div ref={hostRef} className="scene-viewport" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: 'var(--surface-inset)' }}>
-    {external && props.project.reference && props.view === '2d' && <img src={props.project.reference} alt="项目首帧参考图" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
-    {external && (!props.project.reference || props.view !== '2d') && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', color: 'var(--text-secondary)', gap: 10 }}><span style={{ fontSize: 36, fontWeight: 300 }}>◇</span><strong>{props.view === '2d' ? '导入你的首帧参考图' : '等待场景重建'}</strong><span style={{ fontSize: 12 }}>{props.view === '2d' ? '从 Projects 面板上传图片，开始创建场景。' : '外部图像需要连接 CE 推理服务后生成点云。'}</span></div>}
+    {external && props.project.reference && props.view === '2d' && <img src={props.project.reference} alt="项目首帧参考图" style={{ position: 'absolute', inset: 0, zIndex: 1, width: '100%', height: '100%', objectFit: 'contain', background: 'var(--surface-inset)' }} />}
+    {external && props.view === '2d' && props.showMasks && props.project.objects.map(object => object.maskPreview && <img key={object.id} src={object.maskPreview} alt={`${object.name} mask`} style={{ position: 'absolute', inset: 0, zIndex: 2, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />)}
+    {external && props.view === '2d' && props.segmenting && props.project.workflow && props.samPrompts && props.onSamPromptsChange && <SamPromptOverlay width={props.project.workflow.width} height={props.project.workflow.height} prompts={props.samPrompts} mode={props.samPromptMode || 'positive'} onChange={props.onSamPromptsChange} />}
+    {external && (!props.project.reference || (props.view !== '2d' && !ready && !failure)) && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', color: 'var(--text-secondary)', gap: 10, padding: 28 }}><span style={{ fontSize: 36, fontWeight: 300 }}>◇</span><strong>{props.view === '2d' ? '导入你的首帧参考图' : props.sceneError ? '点云读取失败' : props.project.geometryReady ? '正在加载真实点云' : '等待场景重建'}</strong><span style={{ fontSize: 12 }}>{props.view === '2d' ? '从项目面板上传图片，开始创建场景。' : props.sceneError || (props.project.geometryReady ? '正在读取已完成任务的点云预览。' : '请在重建与分割面板提交 Depth Pro，首次成功结果将自动显示。')}</span>{props.view === '3d' && props.sceneError && <button className="secondary-button" onClick={props.onRetryScene}>重新读取点云</button>}</div>}
     {!external && !ready && !failure && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>正在准备交互场景…</div>}
     {failure && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 40, textAlign: 'center', color: 'var(--danger-text)' }}>{failure}</div>}
     {props.view === '3d' && captureReadout && <details open style={{ position: 'absolute', right: 16, top: 52, width: 285, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100% - 100px)', overflow: 'auto', pointerEvents: 'auto', border: '1px solid var(--hud-border)', borderRadius: 6, padding: '8px 10px', background: 'var(--hud-bg)', color: 'var(--hud-text)', textShadow: 'var(--hud-shadow)', fontSize: 11, lineHeight: 1.65, fontFamily: 'ui-monospace, monospace', scrollbarWidth: 'thin' }}>

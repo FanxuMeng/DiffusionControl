@@ -1,0 +1,3 @@
+# User approved separately: newly discovered missing dependency, not a Torch upgrade.
+# wcwidth is already present; install with --no-deps --require-hashes.
+ftfy @ https://files.pythonhosted.org/packages/ab/6e/81d47999aebc1b155f81eca4477a616a70f238a2549848c38983f3c22a82/ftfy-6.3.1-py3-none-any.whl --hash=sha256:7c70eb532015cd2f9adb53f101fb6c7945988d023a085d127d1573dc49dd0083

@@ -245,6 +245,18 @@ export function validateModelProfile(raw: unknown): ModelProfile {
 }
 
 export function getModelProfiles(state: GenerationState): ModelProfile[] { return [...BUILTIN_MODEL_PROFILES, ...state.customProfiles]; }
+export function isSymphoMotion(modelId: string): boolean {
+  return modelId === 'symphomotion-single-gpu' || modelId === 'symphomotion-multi-gpu';
+}
+export function repairLegacyEnvironments(state: GenerationState): GenerationState {
+  let changed = false;
+  const projectProfiles = state.projectProfiles.map(profile => {
+    if (!isSymphoMotion(profile.modelProfileId) || getSlurmExecution(profile).envName !== 'base') return profile;
+    changed = true;
+    return { ...profile, execution: { ...getSlurmExecution(profile), envName: 'symphomotion' } };
+  });
+  return changed ? { ...state, projectProfiles } : state;
+}
 export function createGenerationState(): GenerationState {
   const first = BUILTIN_MODEL_PROFILES[0] ?? fail('没有可用的内置模型 profile');
   return createProjectProfile({ version: 1, selectedModelId: first.id, activeProfileIds: {}, projectProfiles: [], customProfiles: [], submissions: [] }, '默认运行');
@@ -271,7 +283,7 @@ export function createProjectProfile(state: GenerationState, name: string, copyF
   if (state.projectProfiles.some(profile => profile.modelProfileId === modelId && profile.name === label)) fail('同一模型的运行配置名称不能重复');
   if (state.projectProfiles.length >= 100) fail('最多支持 100 个项目运行配置');
   const values = source ? { ...source.values } : defaults(model!);
-  const profile: ProjectGenerationProfile = { id: id(), name: label, modelProfileId: modelId, modelProfileVersion: source?.modelProfileVersion ?? model!.version, values, commandText: source?.commandText ?? canonicalCommand(model!, values), editSource: source?.editSource ?? 'form', execution: source ? getSlurmExecution(source) : createSlurmExecution() };
+  const profile: ProjectGenerationProfile = { id: id(), name: label, modelProfileId: modelId, modelProfileVersion: source?.modelProfileVersion ?? model!.version, values, commandText: source?.commandText ?? canonicalCommand(model!, values), editSource: source?.editSource ?? 'form', execution: source ? getSlurmExecution(source) : { ...createSlurmExecution(), ...(isSymphoMotion(modelId) ? { envName: 'symphomotion' } : {}) }, useGlobalExecution: source?.useGlobalExecution ?? true };
   return { ...state, selectedModelId: modelId, activeProfileIds: { ...state.activeProfileIds, [modelId]: profile.id }, projectProfiles: [...state.projectProfiles, profile] };
 }
 export function renameProjectProfile(state: GenerationState, profileId: string, name: string): GenerationState {
@@ -404,6 +416,10 @@ function validateJob(raw: unknown, requestId: string): GenerationJob {
     if (typeof source.progress !== 'number' || !Number.isFinite(source.progress) || source.progress < 0 || source.progress > 1) fail('作业进度应为 0–1');
     job.progress = source.progress;
   }
+  if (source.cancelRequested !== undefined) {
+    if (typeof source.cancelRequested !== 'boolean') fail('取消意图应为布尔值');
+    job.cancelRequested = source.cancelRequested;
+  }
   return job;
 }
 export function validateGenerationState(raw: unknown): GenerationState {
@@ -417,7 +433,8 @@ export function validateGenerationState(raw: unknown): GenerationState {
     const values: GenerationValues = {};
     for (const [key, value] of Object.entries(rawValues)) values[identifier(key, '参数 key')] = text(value, '参数草稿值', true);
     if (profile.editSource !== 'form' && profile.editSource !== 'command') fail('editSource 必须为 form 或 command');
-    return { id: identifier(profile.id, '运行配置 ID'), name: text(profile.name, '运行配置名称', false, 200), modelProfileId: identifier(profile.modelProfileId, '模型 ID'), modelProfileVersion: positiveInteger(profile.modelProfileVersion, '模型版本'), values, commandText: text(profile.commandText, '命令草稿', true), editSource: profile.editSource, execution: profile.execution === undefined ? createSlurmExecution() : validateSlurmExecutionDraft(profile.execution) } satisfies ProjectGenerationProfile;
+    if (profile.useGlobalExecution !== undefined && typeof profile.useGlobalExecution !== 'boolean') fail('useGlobalExecution 必须为布尔值');
+    return { id: identifier(profile.id, '运行配置 ID'), name: text(profile.name, '运行配置名称', false, 200), modelProfileId: identifier(profile.modelProfileId, '模型 ID'), modelProfileVersion: positiveInteger(profile.modelProfileVersion, '模型版本'), values, commandText: text(profile.commandText, '命令草稿', true), editSource: profile.editSource, execution: profile.execution === undefined ? createSlurmExecution() : validateSlurmExecutionDraft(profile.execution), ...(profile.useGlobalExecution !== undefined ? { useGlobalExecution: profile.useGlobalExecution } : {}) } satisfies ProjectGenerationProfile;
   });
   unique(projectProfiles.map(profile => profile.id), '运行配置 ID');
   unique(projectProfiles.map(profile => `${profile.modelProfileId}\0${profile.name}`), '同模型的运行配置名称');

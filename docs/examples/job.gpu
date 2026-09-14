@@ -10,10 +10,11 @@
 #SBATCH -p youlab-gpu
 #SBATCH -G 2
 
-conda init bash ; source ~/.bashrc
+set -euo pipefail
+source /home/225015066/miniconda3/etc/profile.d/conda.sh
 
-ENVNAME="default_env"
-if [[ "$1" == ENVNAME=* ]]; then
+ENVNAME="base"
+if [[ "${1:-}" == ENVNAME=* ]]; then
     ENVNAME="${1#ENVNAME=}"
     shift
 fi

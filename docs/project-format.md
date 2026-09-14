@@ -1,5 +1,13 @@
 # Project 文件构成与 JSON README
 
+2026-09-11：原型 Project 保持版本 2，新增可选 `SceneObject.boxQuaternion:[x,y,z,w]`，表示 bbox 局部轴到场景轴的旋转；缺省为单位旋转，`halfExtents` 沿 bbox 局部轴。`initialPose` 则表示用户选定正面的操控姿态，显示框使用 `R(t)R(0)^T R_box`，不能用它直接替换固有框朝向。新增可选 `motionControls:{object?:{enabled,binding},camera?:{enabled,binding}}`；binding 保存已应用轨迹身份，新增轨迹时自动开启，关闭不删除轨迹。完整项目包原样保留这些字段。详见 [运动控制与渲染](motion-controls-and-rendering.md)。
+
+2026-09-10 项目管理更新：正式入口已移除自动示例和演示首帧，支持空项目列表、删除与回收、集群版本快照及完整 `.dcproject.zip` 导入／导出。完整包使用 `format:"diffusioncontrol.project-package",version:1`，内含现有前端 Project、首帧资产、已结束作业与产物清单；导入保留稳定 ID、校验 SHA-256，并恢复当前服务器的文件路径及发布记录。项目管理目录为 `var/projects`，`var/assets` 保存首帧，`projects/<项目 ID>/jobs/<作业 ID>` 保存推理作业与产物。旧 JSON 只含引用，不能替代完整包。详见 [项目管理规范](project-management.md)。
+
+2026-09-09 工作流扩展：原型备份新增可选 `workflow` v1，保存规范化首帧资产 ID、宽高、`sceneJobId`、`exportJobId` 与完整 `pending` 提交快照。可选 `objectDefinitions` 保存添加物体时的名称、描述、候选索引和关联 requestId，支持刷新后自动应用。真实物体使用 `shape:"pointcloud"` 和 `reconstruction:{jobId,sceneJobId}`。NPZ、完整点 ID、预览及条件视频保存在后端（当前为 `projects/<项目 ID>/jobs/<作业 ID>/outputs`），浏览器备份只保存引用；迁移到另一服务需要同时迁移后端资产。该实现不改写本文长期规划的正式 PathRef 格式。运行配置可用 `useGlobalExecution:true` 采用公共 Slurm 脚本，旧配置缺少此字段时继续保留本地脚本。详见 [工作流实现](reconstruction-workflow.md)。
+
+项目备份导入保留原项目 ID，以便恢复服务端任务和依赖；当前工作区已有同一 ID 时明确确认替换并备份原版本，不将旧作业冒充新项目的作业。集群已存在的作业必须与包内请求／产物一致，不能被覆盖。待确认提交不得重新绑定项目 ID 或重新生成请求 ID。
+
 2026-09-09：v0.6 已为命名运行配置增加 execution 草稿，保存 ENVNAME、脚本文件名和全文；新推理请求采用 API v2，冻结内层推理 argv 与外层 sbatch 执行快照。历史 API v1 请求保持原样，只能查询／导出，见 [Slurm 数据扩展](slurm-execution.md#api-v2-与兼容性)。
 
 2026-09-08：v0.5 已实现 generation v1 扩展，保存命名配置、模型定义、命令草稿及提交记录；旧项目缺少此字段时初始化默认配置。原型备份与正式 JSON 的基础导入均保留该扩展，格式见 [生成数据](generation-panel.md#项目数据扩展)。既有 export_profiles 继续仅表示条件包导出。
@@ -9,6 +17,8 @@
 本次更新的已确认约定是：每个物体独占一行并行时间轨道；原始轨迹与时间片段分开；移动片段改变开始时间，拖动边界伸缩完整运动；相机参数由项目和轨迹共同持久化。**D17-A：每条相机轨迹使用固定、可编辑的 K／FOV／畸变；D18-B：物体虚拟相机绑定物体正面；D19-A：整段按比例变速，移动只改开始时间。**
 
 ## 1. 存储位置与环境变量
+
+2026-09-11 包围盒编辑扩展：`workflow.objectDefinitions[]` 可选 `replaceObjectJobId` 表示对同 ID 物体的待处理替换，旧实例保持到新关联成功。对应请求使用 `inputs.replaceObjectJobId` 与 `options.selectionBox:{center,halfExtents,quaternion}`，排除列表不含被替换物体。成功后原位更新 `reconstruction.jobId`、框参数、mask 及初始位姿，清空当前物体轨迹并保留历史；去除待处理定义和当前导出绑定。项目和包格式版本保持不变。相机轨迹删除把当前轨迹移入 `cameraHistory`，清空 `camera`、`cameraClip` 并关闭相机控制。完整行为见 [3D 编辑设计](bounding-box-editor.md)。
 
 **已确定的部署约束：** 应用运行在浏览器中，前后端分离，服务端部署于 CE 登录节点，通过 Slurm 调度计算节点。项目与模型所用的长期路径由**服务端**解析；浏览器不直接读取服务器绝对路径。浏览器选中的本机文件先上传，不能把 `C:\\...` 或 `/Users/...` 直接作为 CE 可读路径。
 

@@ -1,0 +1,74 @@
+{
+  "stateRoot": "var",
+  "projectsRoot": "projects",
+  "listenHost": "0.0.0.0",
+  "port": 8000,
+  "allowedHosts": ["localhost", "127.0.0.1", "celn01", "12.12.12.206", "10.27.130.15", "10.10.10.206"],
+  "pollSeconds": 15,
+  "commandTimeoutSeconds": 10,
+  "allowedReadRoots": [
+    "/home/225015066/dev-projects/DiffusionControl",
+    "/home/225015066/PretrainedModels"
+  ],
+  "environments": {
+    "symphomotion": "/home/225015066/miniconda3/envs/symphomotion",
+    "sam2": "/home/225015066/miniconda3/envs/sam2",
+    "depthpro": "/home/225015066/miniconda3/envs/depthpro"
+  },
+  "slurm": {
+    "sbatch": "/usr/bin/sbatch",
+    "squeue": "/usr/bin/squeue",
+    "sacct": "/usr/bin/sacct",
+    "scancel": "/usr/bin/scancel"
+  },
+  "workflow": {
+    "modelRoot": "/home/225015066/PretrainedModels",
+    "tasks": {
+      "depth": {
+        "enabled": false,
+        "disabledReason": "请按 docs/model-environments.md 安装 depthpro 并完成计算节点验证后启用",
+        "environment": "depthpro",
+        "checkpoint": "/home/225015066/PretrainedModels/DepthPro/depth_pro.pt"
+      },
+      "sam2": {
+        "enabled": false,
+        "disabledReason": "请按 docs/model-environments.md 安装 sam2 并完成计算节点验证后启用",
+        "environment": "sam2",
+        "checkpoint": "/home/225015066/PretrainedModels/SAM2/sam2.1_hiera_large.pt"
+      },
+      "associate": {
+        "enabled": false,
+        "disabledReason": "等待用户安装 depthpro 环境后启用",
+        "environment": "depthpro"
+      },
+      "export": {
+        "enabled": false,
+        "disabledReason": "等待 depthpro 的 PyTorch3D CUDA 扩展与计算节点验证后启用",
+        "environment": "depthpro"
+      }
+    }
+  },
+  "models": [
+    {
+      "profile": "backend/profiles/symphomotion-multi-gpu.json",
+      "workdir": "/home/225015066/dev-projects/DiffusionControl/third_party/SymphoMotion",
+      "adapter": "symphomotion",
+      "enabled": true,
+      "environmentNames": ["symphomotion"],
+      "inputDefaults": {
+        "pretrained_model_path": "/home/225015066/PretrainedModels/Diffusers/Wan2.1-I2V-14B-720P-Diffusers"
+      }
+    },
+    {
+      "profile": "backend/profiles/symphomotion-single-gpu.json",
+      "workdir": "/home/225015066/dev-projects/DiffusionControl/third_party/SymphoMotion",
+      "adapter": "symphomotion",
+      "enabled": false,
+      "disabledReason": "原生单卡入口在 RTX 5090 上显存不足，请选择已通过真实生成验收的多 GPU 模型分片配置",
+      "environmentNames": ["symphomotion"],
+      "inputDefaults": {
+        "pretrained_model_path": "/home/225015066/PretrainedModels/Diffusers/Wan2.1-I2V-14B-720P-Diffusers"
+      }
+    }
+  ]
+}

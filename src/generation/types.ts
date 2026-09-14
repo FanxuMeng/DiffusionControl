@@ -20,6 +20,7 @@ export interface ProjectGenerationProfile {
   id: string; name: string; modelProfileId: string; modelProfileVersion: number;
   values: GenerationValues; commandText: string; editSource: 'form' | 'command';
   execution: SlurmExecutionConfig;
+  useGlobalExecution?: boolean;
 }
 export interface GenerationRequest {
   apiVersion: 1 | 2; requestId: string; createdAt: string;
@@ -32,6 +33,7 @@ export interface GenerationJob {
   id: string; requestId: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   progress?: number; message: string; outputs: { name: string; url: string }[];
+  cancelRequested?: boolean;
 }
 export interface GenerationSubmission {
   endpoint: string; request: GenerationRequest; job?: GenerationJob;
@@ -49,4 +51,4 @@ export interface GenerationInspection {
   submissionArgv: string[]; submissionCommand: string;
   commandParseable: boolean; canExecute: boolean;
 }
-export interface GenerationCapabilities { apiVersion: 1 | 2; profiles: { id: string; version: number }[]; executionModes?: string[] }
+export interface GenerationCapabilities { apiVersion: 1 | 2; profiles: { id: string; version: number; environmentNames?: string[] }[]; executionModes?: string[] }

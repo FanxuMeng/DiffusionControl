@@ -4,7 +4,13 @@
 
 最终形态已确定为浏览器应用、前后端分离：后端 HTTP 服务部署于 CE 登录节点，通过 Slurm 把模型推理提交到计算节点；浏览器承担实时交互、轨迹采样及点云预览。
 
-当前阶段：**v0.6 可交互浏览器前端原型已实现**。修订日期：2026-09-09。本轮先更新文档，再增加 ENVNAME 输入、可折叠的 Bash 脚本编辑／导入／下载，以及完整 sbatch 提交预览。模型参数与推理命令继续双向编辑，脚本和环境随命名运行配置保存。新提交必须连接支持 API v2 与 `slurm_sbatch_v1` 的服务，避免旧服务在登录节点直接执行推理。未连接时仍可编辑、校验和导出。本仓库尚未实现或部署 CE 服务、模型权重和条件导出器，三维交互仍使用程序化示例场景。
+当前阶段：**真实模型模块与 HTTP → Slurm 工作流验收通过，本机重建任务已启用**。修订日期：2026-09-10。Depth Pro、SAM2.1 Large、mask 到原场景点簇关联、初始 AABB、PyTorch3D 动态条件 RGB／空洞 mask 导出均已通过真实计算节点验证；模型文件位于 PretrainedModels，推理复用 `sam2`、`depthpro`、`symphomotion` 环境。HTTP 上传到动态导出的四类任务通过；双卡 Slurm 344573 使用其真实条件包生成 384×256、5 帧、2 步视频，解码与下载通过。前端真实点云解码、场景组装及项目恢复测试通过，浏览器交互尚未实测；2 步视频存在明显畸变，正式画质、复杂运动和高清长视频仍需独立验收。详见 [GPU 验收记录](docs/gpu-validation.md) 和 [重建模块测试](docs/workflow-module-validation.md)。
+
+全局设置集中管理公共 Slurm 脚本，各任务保留自己的 ENVNAME；旧生成配置继续保留本地脚本，用户可选择采用全局设置。真实点云、分割候选和条件视频从同源 API 读取，作业保存在 FastAPI + SQLite 后端。完整项目协作同步与单视角遮挡区域补全尚未实现。
+
+正式项目入口已移除默认示例与演示首帧。项目面板支持删除／恢复、本地完整包导入导出、集群版本快照及完整包存取；删除保留作业和产物，正在运行的任务继续执行。完整包与回收规则见 [项目管理](docs/project-management.md)。集群项目目录为 `var/projects`，浏览器草稿仍采用本机自动保存。
+
+项目缩略图下支持重命名，左上角下拉列表可切换项目。首次 Depth Pro 成功后自动绑定点云；SAM2 候选通过「添加物体」自动关联并加入物体面板。模型结果和日志统一放在 `projects/<项目 ID>/jobs/<作业 ID>`，`var/projects` 继续保存快照及交换包。历史迁移及验证见 [目录与交互修复](docs/workflow-usability-and-storage.md)。
 
 v0.5 的模型／命名配置、命令双向编辑和任务客户端保持可用；历史实现与验证见 [生成面板记录](docs/generation-panel.md)。
 
@@ -21,9 +27,9 @@ npm install
 npm run dev
 ```
 
-打开终端显示的本地地址，默认 `http://127.0.0.1:5173/`。操作见 [v0.6 原型使用说明](docs/prototype-guide.md)。副面板依次为项目、物体控制、相机控制和 Diffusion 生成。轨迹工作流保持“物体运动 → 动态场景 → 相机轨迹”，动态预览统一放在 3D 视区；SAM、重建和首帧生成尚未连接模型。项目和生成配置保存在当前浏览器，可导出备份。
+打开终端显示的本地地址，默认 `http://127.0.0.1:5173/`。真实工作流操作见 [重建与分割说明](docs/reconstruction-workflow.md)，依赖安装见 [模型环境](docs/model-environments.md)。先导入首帧并上传，再重建和分割、关联物体、编辑轨迹、提交条件导出，最后填入生成配置。动态预览统一放在 3D 视区；项目和生成配置保存在当前浏览器，真实资产保存在后端，备份恢复需要保留两者。
 
-使用生成面板时，先选择模型与命名配置，再填写 CE 可读取的输入／权重路径、ENVNAME 与作业脚本。可参考 [自定义模型定义](docs/examples/custom-model.profile.json) 和 [job.gpu 示例](docs/examples/job.gpu)。默认通过同源 `/api` 连接登录节点后端，点击“连接并检查模型”即可核对模型版本和 Slurm 执行能力；地址覆盖位于折叠的“高级连接设置”，部署默认值也可通过 [.env.example](.env.example) 配置。当前仓库未实现后端或同源代理，未连接时可编辑与导出请求。完整流程与新接口见 [Slurm 提交规格](docs/slurm-execution.md)，旧 API v1 记录仅保留查询与导出。
+使用生成面板时，先选择模型与命名配置，再填写 CE 可读取的输入／权重路径、ENVNAME 与作业脚本；本节点 SymphoMotion 的 ENVNAME 填 `symphomotion`。可参考 [自定义模型定义](docs/examples/custom-model.profile.json) 和 [job.gpu 示例](docs/examples/job.gpu)。默认通过同源 `/api` 连接后端，先在 `/login` 登录，再点击“连接并检查模型”；地址覆盖位于“高级连接设置”。生产入口由后端提供 `dist` 与 API，Vite 开发配置已代理 `/api` 和 `/login` 至后端 8000 端口。实际启动前请完成 [后端部署说明](docs/backend-deployment.md)；未连接时仍可编辑与导出请求。旧 API v1 记录仅保留查询与导出。
 
 当前构建、测试和浏览器验证范围统一记录在 [v0.6 验证记录](docs/slurm-execution.md#验证记录)；v0.3–v0.5 的历史结果保留在各自文档。
 
@@ -45,6 +51,8 @@ npm run dev
 | [上游兼容性调研](docs/research-compatibility.md) | SymphoMotion、ViewCrafter、Uni3C 的官方证据及适配差距 |
 | [轨迹时间与镜头预览调研](docs/trajectory-camera-research.md) | 时间重映射、论文中的视锥画法、K／FOV／畸变设计与兼容边界 |
 | [浏览器与 CE 部署架构](docs/deployment-architecture.md) | 前后端边界、上传和服务端路径、异步计算、分级加载及断网恢复 |
+| [登录节点后端技术方案](docs/backend-implementation.md) | 生成 API v2、校验、持久化、Slurm 状态恢复、路径与身份边界 |
+| [后端部署与运维](docs/backend-deployment.md) | base Web 服务、复用 symphomotion 环境、内网访问、模型启用与实际验证结果 |
 | [最小项目 JSON](docs/examples/project.empty.json) | 仅创建项目时的合法数据示例 |
 | [完整项目 JSON](docs/examples/project.populated.json) | 包含场景、物体、轨迹和导出信息的结构示例 |
 | [相机轨迹示例](docs/examples/camera.trajectory.json) / [物体轨迹示例](docs/examples/object.trajectory.json) | 本系统建议的编辑格式，不是上游原生格式 |

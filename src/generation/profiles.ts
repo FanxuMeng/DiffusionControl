@@ -138,3 +138,24 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     ],
   },
 ];
+
+BUILTIN_MODEL_PROFILES.push({
+  ...BUILTIN_MODEL_PROFILES[0],
+  id: 'symphomotion-multi-gpu',
+  version: 1,
+  name: 'SymphoMotion · 多 GPU 模型分片',
+  commandPrefix: ['python3', '../../backend/workers/symphomotion.py', '--memory_mode', 'multi_gpu'],
+  description: '一个推理进程将模型 blocks 分配到多张 GPU，保留原模型精度。运行环境使用 symphomotion。',
+  inputRequirements: [
+    '全局 Slurm 脚本需申请一个 task、至少两张 GPU，例如 --ntasks-per-node=1、-G 2；ENVNAME 填 symphomotion。',
+    '工作目录为 DiffusionControl/third_party/SymphoMotion；模型分片入口位于本项目 backend/workers。',
+    '分片按实际权重大小为各卡预留激活显存；更高分辨率、更多帧仍可能需要更多显存或 GPU。',
+    ...BUILTIN_MODEL_PROFILES[0].inputRequirements.slice(1, 6),
+  ],
+  parameters: BUILTIN_MODEL_PROFILES[0].parameters.map(parameter => {
+    if (parameter.key === 'pretrained_model_path') return { ...parameter, defaultValue: '/home/225015066/PretrainedModels/Diffusers/Wan2.1-I2V-14B-720P-Diffusers' };
+    if (parameter.key === 'controlnet_path') return { ...parameter, defaultValue: '/home/225015066/PretrainedModels/Symphomotion/pretrained_checkpoints/camera_control/controlnet.pth' };
+    if (parameter.key === 'obj_injector_path') return { ...parameter, defaultValue: '/home/225015066/PretrainedModels/Symphomotion/pretrained_checkpoints/object_control/object_injector.pth' };
+    return { ...parameter };
+  }),
+});

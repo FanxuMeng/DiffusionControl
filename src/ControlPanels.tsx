@@ -1,16 +1,22 @@
-import { useState, type CSSProperties } from 'react';
+import { useCallback, useState, type CSSProperties } from 'react';
 import {
   Armchair, ArrowUpRight, Check, ChevronDown, ChevronRight, Circle,
   Crosshair, Download, Flower2, FolderOpen, ImagePlus, Layers3,
-  LoaderCircle, LockKeyhole, Plus, Route, Settings2, Sparkles, Table2, Upload, Video,
+  LoaderCircle, LockKeyhole, Plus, Route, Settings2, Sparkles, Table2, Trash2, Upload, Video,
 } from 'lucide-react';
 import type { Face, MotionClip, Project, SceneObject, Trajectory } from './types';
 import { OBJECT_FACES } from './objectAxes';
 import GenerationPanel from './GenerationPanel';
 import type { GenerationState } from './generation/types';
 import './panels.css';
+import WorkflowPanel, { type WorkflowPanelProps } from './workflow/WorkflowPanel';
+import { GlobalExecutionPanel } from './workflow/ExecutionSettings';
+import ProjectNameEditor from './ProjectNameEditor';
+import { definitionJob } from './workflow/apply';
+import type { WorkflowJob } from './workflow/types';
 
 export interface ControlPanelsProps {
+  workflow: Omit<WorkflowPanelProps, 'project' | 'locked' | 'onSegment' | 'onNotify'>;
   projects: Project[];
   project: Project;
   selectedObjectId: string | null;
@@ -19,7 +25,12 @@ export interface ControlPanelsProps {
   onProjectSelect: (id: string) => void;
   onCreate: () => void;
   onImport: () => void;
+  onExport: () => void;
+  onDeleteProject: (id: string) => void;
+  onRenameProject: (id: string, name: string) => void;
   onSelectObject: (id: string) => void;
+  onDeleteObject: (id: string) => void;
+  onDeleteCameraTrajectory: () => void;
   onPromptChange: (id: string, prompt: string) => void;
   onSegment: () => void;
   onRecordTarget: (target: string) => void;
@@ -29,7 +40,6 @@ export interface ControlPanelsProps {
   onFrontSelect: (id: string, face: Face) => void;
   onDownload: (trajectory: Trajectory) => void;
   onImageImport: () => void;
-  onImageGenerate: () => void;
   onLensEdit?: () => void;
   onPreview?: (trajectory: Trajectory) => void;
   onGenerationChange: (update: (state: GenerationState) => GenerationState) => void;
@@ -69,9 +79,12 @@ export function ControlPanels(props: ControlPanelsProps) {
   const { projects, project, selectedObjectId, locked, building } = props;
   const [collapsed, setCollapsed] = useState({ projects: false, objects: false, camera: false });
   const [expandedObjects, setExpandedObjects] = useState<Map<string, Set<string>>>(() => new Map());
+  const [jobList, setJobList] = useState<{ projectId: string; jobs: WorkflowJob[]; errors: Record<string, string> }>({ projectId: project.id, jobs: [], errors: {} });
+  const onJobsChange = useCallback((jobs: WorkflowJob[], errors: Record<string, string>) => setJobList({ projectId: project.id, jobs, errors }), [project.id]);
+  const pendingObjects = (project.workflow?.objectDefinitions || []).filter(item => item.replaceObjectJobId || !project.objects.some(object => object.id === item.id));
   const objects = project.objects.filter((object) => object.segmented);
   const assignedCount = objects.filter((object) => object.motion === 'static' || (object.motion === 'trajectory' && object.trajectory)).length;
-  const canBuild = project.geometryReady && assignedCount === objects.length;
+  const canBuild = project.geometryReady && assignedCount === objects.length && !pendingObjects.length;
   const cameraReady = project.fourD === 'ready';
   const calibration = project.cameraIntrinsics?.calibration || project.referenceCamera;
   const nonzeroDistortion = calibration?.distortion.coefficients.some((coefficient) => Math.abs(coefficient) > 1e-10);
@@ -91,6 +104,8 @@ export function ControlPanels(props: ControlPanelsProps) {
 
   return (
     <aside className="dcp-panels" aria-label="项目、运动与生成控制">
+      <GlobalExecutionPanel locked={locked} source={project.generation.projectProfiles.find(profile => profile.id === project.generation.activeProfileIds[project.generation.selectedModelId])?.execution} onNotify={props.onNotify} />
+      <WorkflowPanel {...props.workflow} project={project} locked={locked} onSegment={props.onSegment} onNotify={props.onNotify} onJobsChange={onJobsChange} />
       <section className="dcp-panel dcp-projects-panel">
         <div className="dcp-panel-header">
           <button className="dcp-section-title" onClick={() => toggle('projects')} aria-expanded={!collapsed.projects}>
@@ -98,25 +113,27 @@ export function ControlPanels(props: ControlPanelsProps) {
             <span>项目</span><span className="dcp-count">{projects.length}</span>
           </button>
           <div className="dcp-header-actions">
-            <button className="dcp-icon-button" title="导入项目 JSON 或母文件夹" aria-label="导入项目" disabled={locked} onClick={props.onImport}><FolderOpen size={15} /></button>
+            <button className="dcp-icon-button" title="保存到集群或导出完整包" aria-label="保存或导出项目" disabled={locked} onClick={props.onExport}><Download size={15} /></button>
+            <button className="dcp-icon-button" title="从本地或集群导入项目" aria-label="导入项目" disabled={locked} onClick={props.onImport}><FolderOpen size={15} /></button>
             <button className="dcp-icon-button" title="创建项目" aria-label="创建项目" disabled={locked} onClick={props.onCreate}><Plus size={17} /></button>
           </div>
         </div>
         {!collapsed.projects && <div className="dcp-projects-body">
           <div className="dcp-project-list">
             {projects.map((item) => (
-              <button key={item.id} className={`dcp-project-card ${item.id === project.id ? 'is-selected' : ''}`} onClick={() => props.onProjectSelect(item.id)} disabled={locked} aria-pressed={item.id === project.id}>
+              <div className="dcp-project-entry" key={item.id}><button className={`dcp-project-card ${item.id === project.id ? 'is-selected' : ''}`} onClick={() => props.onProjectSelect(item.id)} disabled={locked} aria-label={`打开项目 ${item.name}`} aria-pressed={item.id === project.id}>
                 <div className={`dcp-project-picture ${item.demoScene === 'gallery' ? 'is-gallery' : ''}`}>
                   {item.reference ? <img src={item.reference} alt={`${item.name} 首帧参考图`} /> : <div className="dcp-project-placeholder"><ImagePlus size={24} strokeWidth={1} /><span>暂无首帧</span></div>}
                   {item.id === project.id && <span className="dcp-project-selected"><Check size={10} strokeWidth={3} /></span>}
                 </div>
-                <span className="dcp-project-name">{item.name}</span>
-                <span className="dcp-project-meta">{item.geometryReady ? '点云已加载' : '未加载点云'} <span>· {item.objects.filter((object) => object.segmented).length} 个物体</span></span>
               </button>
+                <ProjectNameEditor name={item.name} disabled={locked} onSave={name => props.onRenameProject(item.id, name)}/>
+                <span className="dcp-project-meta">{item.geometryReady ? '点云已加载' : '未加载点云'} <span>· {item.objects.filter((object) => object.segmented).length} 个物体</span></span>
+              <button className="dcp-project-delete dcp-icon-button" title={`删除项目 ${item.name}`} aria-label={`删除项目 ${item.name}`} disabled={locked} onClick={() => props.onDeleteProject(item.id)}><Trash2 size={14}/></button></div>
             ))}
           </div>
           <div className="dcp-project-location" title={project.parentPath}><FolderOpen size={11} /><span>{project.parentPath || '浏览器本地项目'}</span><span>本地</span></div>
-          {!project.reference && !project.demoScene && <div className="dcp-image-actions"><button disabled={locked} onClick={props.onImageImport}><ImagePlus size={13} />导入首帧</button><button disabled={locked} onClick={props.onImageGenerate}><Sparkles size={13} />生成首帧</button></div>}
+          {!project.reference && !project.demoScene && <div className="dcp-image-actions"><button disabled={locked} onClick={props.onImageImport}><ImagePlus size={13} />导入首帧</button></div>}
         </div>}
       </section>
 
@@ -130,35 +147,51 @@ export function ControlPanels(props: ControlPanelsProps) {
         </div>
         {!collapsed.objects && <div className="dcp-objects-body">
           <div className="dcp-panel-intro"><span>物体轨迹与静止状态</span><span>已定义 {assignedCount} / {objects.length}</span></div>
-          {objects.length === 0 ? <div className="dcp-empty-objects"><Crosshair size={25} strokeWidth={1.3} /><strong>暂无分割物体</strong><p>在 2D 参考图中选择需要控制的物体。</p><button className="dcp-button" disabled={locked || (!project.reference && !project.demoScene)} onClick={props.onSegment}><Plus size={13} />添加分割</button></div> :
+          {pendingObjects.map(definition => {
+            const task = definitionJob(definition, jobList.projectId === project.id ? jobList.jobs : []);
+            const applyError = task && jobList.errors[task.id];
+            const state = definition.submissionError ? '提交失败' : applyError ? '无法应用结果' : !task ? '正在确认提交' : ({ queued: '等待 Slurm 调度', running: '正在关联 3D 点簇', succeeded: '正在应用物体结果', failed: '关联失败', cancelled: '已取消' })[task.status];
+            return <article key={definition.id} className="dcp-object-pending" role="status">
+              <div className="dcp-object-header"><strong>{definition.name} · {definition.replaceObjectJobId ? '更新点簇 · ' : ''}{state}</strong><button className="dcp-object-delete dcp-icon-button" title={`${definition.replaceObjectJobId ? '放弃包围盒更新' : '删除物体'} ${definition.name}`} aria-label={`${definition.replaceObjectJobId ? '放弃包围盒更新' : '删除物体'} ${definition.name}`} disabled={locked} onClick={() => {
+                if (!definition.replaceObjectJobId) { props.onDeleteObject(definition.id); return; }
+                if (window.confirm('放弃这次包围盒更新？原物体保留，集群任务继续执行但结果不再自动应用。')) props.workflow.onChange(project.id, p => p.workflow ? { ...p, workflow: { ...p.workflow, objectDefinitions: p.workflow.objectDefinitions?.filter(item => item.requestId !== definition.requestId) } } : p);
+              }}><Trash2 size={14}/></button></div>
+              <p>{definition.prompt || '未填写物体描述'}</p><small>{definition.submissionError || applyError || task?.message || '定义已保存，刷新后可继续等待。'}</small>
+            </article>;
+          })}
+          {objects.length === 0 ? (!pendingObjects.length && <div className="dcp-empty-objects"><Crosshair size={25} strokeWidth={1.3} /><strong>暂无分割物体</strong><p>在上方选择 SAM2 候选，填写定义后点击「添加物体」。</p><button className="dcp-button" disabled={locked || (!project.reference && !project.demoScene)} onClick={props.onSegment}><Plus size={13} />添加分割</button></div>) :
           <div className="dcp-object-list">{objects.map((object, index) => {
+            const objectLocked = locked || pendingObjects.some(item => item.id === object.id);
             const selected = object.id === selectedObjectId;
             const expanded = expandedObjects.get(project.id)?.has(object.id) ?? false;
             const detailsId = `object-details-${encodeURIComponent(project.id)}-${encodeURIComponent(object.id)}`;
             const recordable = project.geometryReady && object.front !== null;
             const reason = !project.geometryReady ? '请先生成 3D 点云' : !object.front ? '请先选择物体正面' : '从物体包围盒中心开始录制';
             return <article key={object.id} className={`dcp-object-card ${selected ? 'is-selected' : ''}`} style={{ '--object-color': object.color } as CSSProperties}>
+              <div className="dcp-object-header">
               <button className="dcp-object-heading" onClick={() => toggleObject(object.id)} aria-expanded={expanded} aria-controls={detailsId} title={`${expanded ? '收起' : '展开'} ${object.name} 的设置`}>
                 <ObjectThumbnail object={object} />
                 <span className="dcp-object-identity"><span className="dcp-object-name"><i />{object.name}</span><span className="dcp-object-status">{object.motion === 'static' ? <><span className="dcp-status-dot is-static" />静止物体</> : object.motion === 'trajectory' && object.trajectory ? <><span className="dcp-status-dot is-ready" />运动轨迹已就绪</> : <><span className="dcp-status-dot" />运动未定义</>}</span></span>
                 <span className="dcp-object-number">{String(index + 1).padStart(2, '0')}</span>
                 {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </button>
+              <button className="dcp-object-delete dcp-icon-button" title={`删除物体 ${object.name}`} aria-label={`删除物体 ${object.name}`} disabled={locked} onClick={() => props.onDeleteObject(object.id)}><Trash2 size={14}/></button>
+              </div>
               <div id={detailsId} className="dcp-object-details" hidden={!expanded}>
                 <label className="dcp-prompt-label" htmlFor={`prompt-${object.id}`}>运动提示词 <span>自动保存</span></label>
-                <textarea id={`prompt-${object.id}`} rows={2} value={object.prompt} disabled={locked} placeholder="描述这个物体的运动…" onChange={(event) => props.onPromptChange(object.id, event.target.value)} />
+                <textarea id={`prompt-${object.id}`} rows={2} value={object.prompt} disabled={objectLocked} placeholder="描述这个物体的运动…" onChange={(event) => props.onPromptChange(object.id, event.target.value)} />
                 {project.geometryReady && <div className="dcp-front-selection">
                   <div className="dcp-front-label"><span>物体正面 <small>物体局部 +X</small></span>{object.front ? <span className="dcp-front-confirmed"><Check size={11} />已定义</span> : <span className="dcp-front-required">请先选择</span>}</div>
                   <div className="dcp-face-options" role="group" aria-label={`${object.name} 的正面`}>
-                    {OBJECT_FACES.map(({ face, color, name }) => <button key={face} title={`${name}作为物体正面`} aria-label={`${name}作为物体正面`} aria-pressed={object.front === face} className={object.front === face ? 'is-selected' : ''} style={{ '--face-color': color } as CSSProperties} disabled={locked} onClick={() => props.onFrontSelect(object.id, face)}><i />{face.toUpperCase()}</button>)}
+                    {OBJECT_FACES.map(({ face, color, name }) => <button key={face} title={`${name}作为物体正面`} aria-label={`${name}作为物体正面`} aria-pressed={object.front === face} className={object.front === face ? 'is-selected' : ''} style={{ '--face-color': color } as CSSProperties} disabled={objectLocked} onClick={() => props.onFrontSelect(object.id, face)}><i />{face.toUpperCase()}</button>)}
                   </div>
                   <p className="dcp-helper">±X／Y／Z 对应 bbox 参考轴；所选面定义物体局部 +X。</p>
                 </div>}
-                {object.motion === 'trajectory' && object.trajectory && <TrajectoryCard trajectory={object.trajectory} clip={object.clip} disabled={locked} onDownload={() => props.onDownload(object.trajectory!)} onReplace={() => props.onPresets('object', object.id)} onPreview={props.onPreview ? () => props.onPreview!(object.trajectory!) : undefined} />}
+                {object.motion === 'trajectory' && object.trajectory && <TrajectoryCard trajectory={object.trajectory} clip={object.clip} disabled={objectLocked} onDownload={() => props.onDownload(object.trajectory!)} onReplace={() => props.onPresets('object', object.id)} onPreview={props.onPreview ? () => props.onPreview!(object.trajectory!) : undefined} />}
                 <div className="dcp-motion-actions">
-                  <button className={`dcp-button ${object.motion === 'static' ? 'is-active' : ''}`} title={project.geometryReady ? '将该物体设为静止' : '请先生成 3D 点云'} disabled={locked || !project.geometryReady} onClick={() => props.onStatic(object.id)}>{object.motion === 'static' ? <Check size={12} /> : <Circle size={11} />}静止</button>
-                  <button className="dcp-button" disabled={locked || !project.geometryReady || !object.front} title={reason} onClick={() => props.onPresets('object', object.id)}><Route size={13} />预设</button>
-                  <button className="dcp-button dcp-record-action" disabled={locked || !recordable} title={reason} onClick={() => props.onRecordTarget(object.id)}><Circle size={10} fill="currentColor" />录制</button>
+                  <button className={`dcp-button ${object.motion === 'static' ? 'is-active' : ''}`} title={project.geometryReady ? '将该物体设为静止' : '请先生成 3D 点云'} disabled={objectLocked || !project.geometryReady} onClick={() => props.onStatic(object.id)}>{object.motion === 'static' ? <Check size={12} /> : <Circle size={11} />}静止</button>
+                  <button className="dcp-button" disabled={objectLocked || !project.geometryReady || !object.front} title={reason} onClick={() => props.onPresets('object', object.id)}><Route size={13} />预设</button>
+                  <button className="dcp-button dcp-record-action" disabled={objectLocked || !recordable} title={reason} onClick={() => props.onRecordTarget(object.id)}><Circle size={10} fill="currentColor" />录制</button>
                 </div>
                 {!recordable && <p className="dcp-helper"><LockKeyhole size={10} />{reason}</p>}
               </div>
@@ -181,7 +214,10 @@ export function ControlPanels(props: ControlPanelsProps) {
             {collapsed.camera ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
             <span>相机控制</span>
           </button>
-          {cameraReady ? <span className="dcp-camera-state is-ready"><span />可录制</span> : <LockKeyhole size={13} className="dcp-muted" />}
+          <div className="dcp-header-actions">
+            {cameraReady ? <span className="dcp-camera-state is-ready"><span />可录制</span> : <LockKeyhole size={13} className="dcp-muted" />}
+            {project.camera && <button className="dcp-object-delete dcp-icon-button" title="删除相机轨迹" aria-label="删除相机轨迹" disabled={locked} onClick={props.onDeleteCameraTrajectory}><Trash2 size={14}/></button>}
+          </div>
         </div>
         {!collapsed.camera && <div className="dcp-camera-body">
           {project.camera ? <>
@@ -199,7 +235,7 @@ export function ControlPanels(props: ControlPanelsProps) {
           <div className="dcp-camera-note"><Crosshair size={12} /><span>首帧位姿对齐 <span>· SymphoMotion</span></span></div>
         </div>}
       </section>
-      <GenerationPanel key={project.id} projectId={project.id} projectName={project.name} state={project.generation} locked={locked} onChange={props.onGenerationChange} onNotify={props.onNotify} />
+      <GenerationPanel project={project} onProjectChange={props.workflow.onChange} projectId={project.id} projectName={project.name} state={project.generation} locked={locked} onChange={props.onGenerationChange} onNotify={props.onNotify} />
     </aside>
   );
 }

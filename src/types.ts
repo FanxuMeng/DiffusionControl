@@ -1,4 +1,5 @@
 import type { GenerationState } from './generation/types';
+import type { RealSceneData, SamPrompts, WorkflowState } from './workflow/types';
 
 export type Vec3 = [number, number, number];
 export type Vec2 = [number, number];
@@ -8,6 +9,11 @@ export type View = '2d' | '3d';
 export type RecordState = 'preview' | 'countdown' | 'recording' | 'paused' | 'saving';
 export type Face = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
 export interface Pose { position: Vec3; quaternion: Quat }
+export interface SelectionBox { center: Vec3; halfExtents: Vec3; quaternion: Quat }
+export interface BoxEditState {
+  projectId: string; objectId: string; sourceJobId: string;
+  original: SelectionBox; box: SelectionBox; mode: 'translate' | 'rotate' | 'scale';
+}
 export interface Sample extends Pose { t: number }
 export interface CameraCalibration {
   id: string; revision: number; model: 'pinhole'; imageWidth: number; imageHeight: number;
@@ -36,12 +42,16 @@ export interface Trajectory {
 }
 export interface SceneObject {
   id: string; name: string; color: string; prompt: string;
-  shape: 'chair' | 'plant' | 'table' | 'sphere' | 'humanoid'; center: Vec3; halfExtents: Vec3;
+  shape: 'chair' | 'plant' | 'table' | 'sphere' | 'humanoid' | 'pointcloud'; center: Vec3; halfExtents: Vec3;
   segmented: boolean; front: Face | null; initialPose: Pose;
+  boxQuaternion?: Quat;
   motion: 'unassigned' | 'static' | 'trajectory'; trajectory: Trajectory | null; clip: MotionClip | null; history: Trajectory[];
   maskPreview?: string;
+  reconstruction?: { jobId: string; sceneJobId: string };
 }
 export interface Project {
+  motionControls?: Partial<Record<'object' | 'camera', { enabled: boolean; binding: string }>>;
+  workflow?: WorkflowState;
   generation: GenerationState;
   id: string; name: string; description: string; parentPath: string; reference: string | null;
   demoScene: 'studio' | 'gallery' | null; demoSceneRevision: number | null; objects: SceneObject[]; geometryReady: boolean;
@@ -59,6 +69,12 @@ export interface SceneHandle {
   getPose: (target: string) => Pose;
 }
 export interface SceneViewportProps {
+  boxEdit?: BoxEditState | null;
+  onBoxChange?: (box: SelectionBox) => void;
+  realScene?: RealSceneData | null;
+  sceneError?: string; onRetryScene?: () => void;
+  samPrompts?: SamPrompts; samPromptMode?: 'positive' | 'negative' | 'box';
+  onSamPromptsChange?: (prompts: SamPrompts) => void;
   project: Project; view: View; selectedObjectId: string | null; target: string | null;
   recordState: RecordState; time: number; playing: boolean; followCamera: boolean;
   getCaptureTime?: () => number;

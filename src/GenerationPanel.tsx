@@ -3,10 +3,10 @@ import { Check, ChevronDown, ChevronRight, Copy, Download, LoaderCircle, Play, P
 import {
   buildGenerationRequest, createProjectProfile, getModelProfiles, importModelProfile,
   inspectProjectProfile, rebuildCommand, renameProjectProfile, selectModel,
-  selectProjectProfile, updateCommand, updateExecution, updateField,
+  selectProjectProfile, updateCommand, updateExecution, updateField, isSymphoMotion, repairLegacyEnvironments,
 } from './generation/domain';
 import {
-  fetchGenerationCapabilities, fetchGenerationJob, GenerationRejectedError, isTerminalJob, normalizeApiBase,
+  cancelGenerationJob, fetchGenerationLogs, fetchGenerationCapabilities, fetchGenerationJob, GenerationRejectedError, isTerminalJob, normalizeApiBase,
   readApiEndpoint, SAME_ORIGIN_API_BASE, saveApiEndpoint, submitGenerationJob, supportsSlurmExecution,
 } from './generation/api';
 import { getSlurmExecution, isSlurmRequest, MAX_SLURM_SCRIPT_BYTES, normalizeSlurmScript } from './generation/slurm';
@@ -14,8 +14,16 @@ import type {
   GenerationCapabilities, GenerationJob, GenerationParameter, GenerationState, GenerationSubmission,
 } from './generation/types';
 import './generation.css';
+import { applyGlobalExecution, useExecutionSettings } from './workflow/ExecutionSettings';
+import type { Project } from './types';
+import { motionAvailability, motionControls, OBJECT_PARAMETERS, RENDER_STRATEGY, setMotionControl, syncObjectControl } from './workflow/motionControls';
+import { sameExportSnapshot, exportProjectSnapshot } from './workflow/snapshot';
+import { fetchOutput, getJob } from './workflow/api';
+import type { WorkflowJob, WorkflowResult } from './workflow/types';
 
 export interface GenerationPanelProps {
+  project: Project;
+  onProjectChange: (id: string, update: (project: Project) => Project) => void;
   projectId: string;
   projectName: string;
   state: GenerationState;
@@ -68,7 +76,12 @@ function ParameterInput({ parameter, value, disabled, invalid, id, onChange }: {
   return <input {...common} type="text" inputMode={parameter.type === 'integer' ? 'numeric' : parameter.type === 'number' ? 'decimal' : 'text'} spellCheck={false} autoComplete="off" />;
 }
 
-export default function GenerationPanel({ projectId, projectName, state, locked, onChange, onNotify }: GenerationPanelProps) {
+export default function GenerationPanel({ project, onProjectChange, projectId, projectName, state: storedState, locked, onChange, onNotify }: GenerationPanelProps) {
+  const globalExecution = useExecutionSettings();
+  const controls = motionControls(project), availableMotion = motionAvailability(project);
+  const controlledModel = isSymphoMotion(storedState.selectedModelId);
+  const state = applyGlobalExecution(repairLegacyEnvironments(storedState), globalExecution.value);
+  const [exportBinding, setExportBinding] = useState<{ id: string; job?: WorkflowJob; result?: WorkflowResult; error?: string }>({ id: '' });
   const [collapsed, setCollapsed] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [endpoint, setEndpoint] = useState(readApiEndpoint);
@@ -77,6 +90,7 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
   const [connectionError, setConnectionError] = useState('');
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
   const [pendingRequests, setPendingRequests] = useState<Set<string>>(() => new Set());
+  const [cancelingJobs, setCancelingJobs] = useState<Set<string>>(() => new Set());
   const fileInput = useRef<HTMLInputElement>(null);
   const scriptInput = useRef<HTMLInputElement>(null);
   const lockedRef = useRef(locked);
@@ -99,13 +113,50 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
   const profiles = state.projectProfiles.filter((item) => item.modelProfileId === state.selectedModelId);
   const inspection = inspectProjectProfile(state, profileId);
   const draft = inspection.draft;
-  const fields = inspection.model?.parameters ?? [];
+  const fields = (inspection.model?.parameters ?? []).filter(parameter => !controlledModel || (parameter.key !== 'use_object_prompt' && (controls.object || !OBJECT_PARAMETERS.has(parameter.key))));
   const execution = draft ? getSlurmExecution(draft) : null;
   const executionIssues = inspection.issues.filter((issue) => issue.field?.startsWith('execution.'));
   const modelIssues = inspection.issues.filter((issue) => !issue.field?.startsWith('execution.'));
   const compatible = !!model && hasProfile(connection, model.id, model.version) && supportsSlurm(connection);
   const unresolved = state.submissions.some((item) => item.request.projectProfileId === profileId && !item.rejection && (!item.job || !isTerminalJob(item.job)));
-  const submitDisabled = locked || !inspection.canExecute || !compatible || unresolved || submittingProfiles.current.has(`${projectId}:${profileId}`);
+  const allowedEnvironments = connection?.capabilities.profiles.find(p => p.id === model?.id && p.version === model?.version)?.environmentNames;
+  const environmentError = allowedEnvironments && execution && !allowedEnvironments.includes(execution.envName) ? `此模型允许的 ENVNAME：${allowedEnvironments.join('、') || '无可用环境'}` : '';
+  let bindingError = '';
+  if (controlledModel && project.workflow) {
+    if (!project.workflow.exportJobId) bindingError = '请先导出 Rendered Frames，并点击“填入生成配置”。';
+    else if (exportBinding.id !== project.workflow.exportJobId || !exportBinding.job || !exportBinding.result) bindingError = exportBinding.error || '正在校验 Rendered Frames…';
+    else {
+      try {
+        if (exportBinding.job.status !== 'succeeded' || exportBinding.job.cancelRequested || exportBinding.result.renderStrategy !== RENDER_STRATEGY
+          || !sameExportSnapshot(exportBinding.job.options.project, exportProjectSnapshot(project))
+          || exportBinding.result.validationCsv !== inspection.parameters?.validation_csv_path) bindingError = '轨迹、开关或条件输入已改变，请重新导出 Rendered Frames 并填入配置。';
+      } catch (error) { bindingError = errorText(error); }
+    }
+    if (inspection.parameters && inspection.parameters.use_object_prompt !== controls.object) bindingError = '物体控制参数与项目开关不一致，请从参数重建命令。';
+  }
+  const submitDisabled = locked || !!environmentError || !!bindingError || !inspection.canExecute || !compatible || unresolved || (!!draft?.useGlobalExecution && !globalExecution.value) || submittingProfiles.current.has(`${projectId}:${profileId}`);
+
+  useEffect(() => {
+    if (locked) return;
+    const repaired = repairLegacyEnvironments(storedState);
+    if (syncObjectControl(repaired, controls.object) === storedState) return;
+    onChange(current => {
+      const repaired = repairLegacyEnvironments(current);
+      return syncObjectControl(repaired, controls.object);
+    });
+  }, [projectId, storedState, locked, controls.object, !!project.workflow, onChange]);
+
+  useEffect(() => {
+    const id = project.workflow?.exportJobId;
+    setExportBinding({ id: id || '' });
+    if (!id) return;
+    const abort = new AbortController();
+    void (async () => {
+      const job = await getJob(id, abort.signal), result = await fetchOutput<WorkflowResult>(job, 'result.json', abort.signal);
+      if (!abort.signal.aborted) setExportBinding({ id, job, result });
+    })().catch(error => { if (!abort.signal.aborted) setExportBinding({ id, error: errorText(error) }); });
+    return () => abort.abort();
+  }, [projectId, project.workflow?.exportJobId]);
 
   useEffect(() => {
     setProfileName('');
@@ -270,7 +321,23 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
     if (locked || submission.job || submission.rejection || !isSlurmRequest(submission.request) || !supportsSlurm(connection) || !connection || connection.endpoint !== submission.endpoint || !hasProfile(connection, submission.request.profileId, submission.request.profileVersion)) return;
     void post(submission);
   }
-  const disabledReason = locked ? '录制期间暂停编辑和提交。' : !inspection.canExecute ? '请修正参数、命令或 Slurm 配置中的错误。' : !connection ? '连接 CE 后可执行；当前可导出请求。' : !supportsSlurm(connection) ? '服务需支持 API v2 与 Slurm 提交模式。' : !compatible ? 'CE 未注册此模型 profile 的相同版本。' : unresolved ? '当前配置已有未结束或待确认的任务。' : '通过 CE 登录节点提交 Slurm 作业。';
+  async function cancelJob(submission: GenerationSubmission) {
+    const original = submission.job;
+    if (!original || isTerminalJob(original) || original.cancelRequested || cancelingJobs.has(original.id)) return;
+    setCancelingJobs(previous => new Set(previous).add(original.id));
+    try {
+      const job = await cancelGenerationJob(submission.endpoint, original.id, submission.request.requestId);
+      onChange(current => ({ ...current, submissions: current.submissions.map(item => item.request.requestId === submission.request.requestId ? { ...item, job } : item) }));
+      onNotify(isTerminalJob(job) ? job.message : '已请求取消，等待 Slurm 确认。', 'info');
+    } catch (error) { onNotify(errorText(error), 'error'); }
+    finally { setCancelingJobs(previous => { const next = new Set(previous); next.delete(original.id); return next; }); }
+  }
+  async function downloadLogs(submission: GenerationSubmission) {
+    if (!submission.job) return;
+    try { downloadText(`${submission.job.id}.log`, await fetchGenerationLogs(submission.endpoint, submission.job.id), 'text/plain;charset=utf-8'); }
+    catch (error) { onNotify(errorText(error), 'error'); }
+  }
+  const disabledReason = locked ? '录制期间暂停编辑和提交。' : environmentError || bindingError || (!inspection.canExecute ? '请修正参数、命令或 Slurm 配置中的错误。' : !connection ? '连接 CE 后可执行；当前可导出请求。' : !supportsSlurm(connection) ? '服务需支持 API v2 与 Slurm 提交模式。' : !compatible ? 'CE 未注册此模型 profile 的相同版本。' : unresolved ? '当前配置已有未结束或待确认的任务。' : '通过 CE 登录节点提交 Slurm 作业。');
 
   return <section className="dcp-panel generation-panel" aria-label="Diffusion 生成">
     <div className="dcp-panel-header">
@@ -311,6 +378,18 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
       {draft && <>
         <details className="generation-parameter-group" open>
           <summary>输入参数 <span>{fields.length} 项</span></summary>
+          {controlledModel && <div className="generation-block" aria-label="运动控制开关">
+            <label className="workflow-checkbox"><input type="checkbox" aria-label="物体控制" checked={controls.object} disabled={locked || !availableMotion.object} onChange={event => { const enabled = event.target.checked; onProjectChange(projectId, p => setMotionControl(p, 'object', enabled)); }} />物体控制</label>
+            <p className="generation-help">{availableMotion.object ? '关闭保留物体轨迹；导出不叠加运动框，生成不启用 OMM。' : '应用物体轨迹后自动开启。'}</p>
+            {controls.object && <p>已启用物体轨迹：{project.objects.filter(o => o.motion === 'trajectory').map(o => o.name).join('、')}</p>}
+            <label className="workflow-checkbox"><input type="checkbox" aria-label="相机控制" checked={controls.camera} disabled={locked || !availableMotion.camera} onChange={event => { const enabled = event.target.checked; onProjectChange(projectId, p => setMotionControl(p, 'camera', enabled)); }} />相机控制</label>
+            <p className="generation-help">{availableMotion.camera ? '关闭保留相机轨迹；本次使用固定参考视角。' : '应用相机轨迹后自动开启；当前使用固定参考视角。'}</p>
+            {controls.camera && <div aria-label="相机控制参数">
+              <label className="generation-label">相机轨迹<input readOnly value={project.camera?.name || ''} /></label>
+              <label className="generation-label">固定焦距 fx / fy（像素）<input readOnly value={project.camera?.cameraIntrinsics?.calibration.intrinsic.slice(0, 2).map((row, i) => row[i].toFixed(2)).join(' / ') || ''} /></label>
+              <p className="generation-help">轨迹及镜头参数在相机面板编辑；更改后重新导出 Rendered Frames。</p>
+            </div>}
+          </div>}
           <div className="generation-fields">{fields.map((parameter) => {
             const fieldId = `${uid}-field-${parameter.key}`;
             const issues = inspection.issues.filter((issue) => issue.field === parameter.key);
@@ -332,9 +411,13 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
         </div>
         {execution && <div className="generation-block generation-slurm-block">
           <h3>Slurm 提交配置</h3>
+          <label className="workflow-checkbox"><input type="checkbox" checked={!!draft.useGlobalExecution} disabled={locked} onChange={event => { const enabled = event.target.checked; mutate(current => ({ ...current, projectProfiles: current.projectProfiles.map(profile => profile.id === profileId ? { ...profile, useGlobalExecution: enabled } : profile) })); }} />使用全局脚本{globalExecution.value ? ` · 版本 ${globalExecution.value.revision}` : ' · 待读取'}</label>
           <label className="generation-label" htmlFor={`${uid}-slurm-env`}>ENVNAME <span>Conda 环境</span></label>
-          <input id={`${uid}-slurm-env`} value={execution.envName} disabled={locked} spellCheck={false} autoComplete="off" placeholder="base" aria-invalid={executionIssues.some((issue) => issue.field === 'execution.envName')} onChange={(event) => { const envName = event.target.value; mutate((current) => updateExecution(current, profileId, { envName })); }} />
-          <label className="generation-label generation-name-label" htmlFor={`${uid}-slurm-script-name`}>脚本文件名</label>
+          <input id={`${uid}-slurm-env`} list={`${uid}-environments`} value={execution.envName} disabled={locked} spellCheck={false} autoComplete="off" placeholder={controlledModel ? 'symphomotion' : '已注册环境名'} aria-invalid={!!environmentError || executionIssues.some((issue) => issue.field === 'execution.envName')} onChange={(event) => { const envName = event.target.value; mutate((current) => updateExecution(current, profileId, { envName })); }} />
+          <datalist id={`${uid}-environments`}>{allowedEnvironments?.map(name => <option key={name} value={name} />)}</datalist>
+          {environmentError && <p role="alert">{environmentError}</p>}
+          {bindingError && <p role="alert">{bindingError}</p>}
+          {!draft.useGlobalExecution && <><label className="generation-label generation-name-label" htmlFor={`${uid}-slurm-script-name`}>脚本文件名</label>
           <input id={`${uid}-slurm-script-name`} value={execution.scriptName} disabled={locked} spellCheck={false} autoComplete="off" placeholder="job.gpu" aria-invalid={executionIssues.some((issue) => issue.field === 'execution.scriptName')} onChange={(event) => { const scriptName = event.target.value; mutate((current) => updateExecution(current, profileId, { scriptName })); }} />
           <div className="generation-actions">
             <button className="dcp-button" disabled={locked} onClick={() => scriptInput.current?.click()}><Upload size={12} />导入脚本</button>
@@ -347,6 +430,8 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
             <textarea id={`${uid}-slurm-script`} className="generation-script" rows={12} value={execution.scriptContent} disabled={locked} spellCheck={false} aria-invalid={executionIssues.some((issue) => issue.field === 'execution.scriptContent')} onChange={(event) => { const scriptContent = event.target.value; mutate((current) => updateExecution(current, profileId, { scriptContent })); }} />
             <p className="generation-help">脚本解析首个 ENVNAME 实参，再转发剩余推理参数；资源配置由 CE 检查。</p>
           </details>
+          </>}
+          {draft.useGlobalExecution && <details><summary>查看公共脚本 · {execution.scriptName}</summary><pre className="workflow-code">{execution.scriptContent}</pre></details>}
           {executionIssues.length > 0 && <div className="generation-validation is-error" role="status"><strong>Slurm 配置校验未通过</strong><ul>{executionIssues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul></div>}
           <label className="generation-label generation-name-label" htmlFor={`${uid}-submission`}>Slurm 提交命令 <span>只读预览</span></label>
           <textarea id={`${uid}-submission`} className="generation-command generation-submission-command" rows={5} value={inspection.submissionCommand} readOnly spellCheck={false} placeholder="完成 Slurm 配置与推理命令后生成提交预览。" />
@@ -387,7 +472,7 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
           const slurmRequest = isSlurmRequest(request);
           const canRetry = !locked && !pending && !job && !rejection && slurmRequest && supportsSlurm(connection) && connection?.endpoint === submission.endpoint && hasProfile(connection, request.profileId, request.profileVersion);
           return <article className="generation-job" key={request.requestId}>
-            <div className="generation-job-heading"><strong>{job ? JOB_LABELS[job.status] : rejection ? '请求被拒绝' : pending ? '正在提交…' : '提交结果待确认'}</strong><span>{request.profileId}</span></div>
+            <div className="generation-job-heading"><strong>{job ? job.cancelRequested && !isTerminalJob(job) ? '取消请求中' : JOB_LABELS[job.status] : rejection ? '请求被拒绝' : pending ? '正在提交…' : '提交结果待确认'}</strong><span>{request.profileId}</span></div>
             <p className="generation-help">{state.projectProfiles.find((item) => item.id === request.projectProfileId)?.name || request.projectProfileId} · {new Date(request.createdAt).toLocaleString()}</p>
             <p className="generation-help">服务：{submission.endpoint}</p>
             <code className="generation-job-id" title={job?.id || request.requestId}>{job ? `Job: ${job.id}` : `Request: ${request.requestId}`}</code>
@@ -397,7 +482,7 @@ export default function GenerationPanel({ projectId, projectName, state, locked,
             {rejection && <><p className="generation-field-error">HTTP {rejection.status}：{rejection.message}</p><p className="generation-help">修改配置后可重新提交。</p></>}
             {!slurmRequest && <p className="generation-help">旧版请求仅可追溯、下载及查询；请先在原服务核实任务，再复制运行配置发起 Slurm 请求。</p>}
             {!job && !pending && !rejection && slurmRequest && <p className="generation-help">连接原 Slurm 服务后可重试；请求 ID、脚本与内容保持不变。</p>}
-            <div className="generation-job-actions"><button className="dcp-button" onClick={() => downloadJson(`${request.requestId}.request.json`, request)}><Download size={11} />请求快照</button>{!job && !rejection && slurmRequest && <button className="dcp-button" disabled={!canRetry} title={`需连接 ${submission.endpoint}，支持 API v2 Slurm 并匹配原模型版本`} onClick={() => retry(submission)}><RefreshCw size={11} />{pending ? '提交中' : '重试提交'}</button>}</div>
+            <div className="generation-job-actions"><button className="dcp-button" onClick={() => downloadJson(`${request.requestId}.request.json`, request)}><Download size={11} />请求快照</button>{!job && !rejection && slurmRequest && <button className="dcp-button" disabled={!canRetry} title={`需连接 ${submission.endpoint}，支持 API v2 Slurm 并匹配原模型版本`} onClick={() => retry(submission)}><RefreshCw size={11} />{pending ? '提交中' : '重试提交'}</button>}{job && slurmRequest && <button className="dcp-button" onClick={() => void downloadLogs(submission)}><Download size={11} />下载日志</button>}{job && slurmRequest && !isTerminalJob(job) && <button className="dcp-button" disabled={job.cancelRequested || cancelingJobs.has(job.id)} onClick={() => void cancelJob(submission)}>{job.cancelRequested || cancelingJobs.has(job.id) ? '取消请求中' : '取消作业'}</button>}</div>
             {job && job.outputs.length > 0 && <ul className="generation-outputs">{job.outputs.map((output, index) => <li key={index}><a href={output.url} target="_blank" rel="noreferrer">{output.name || '查看输出'}</a></li>)}</ul>}
           </article>;
         })}</div>
